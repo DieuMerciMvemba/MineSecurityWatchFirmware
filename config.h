@@ -10,6 +10,9 @@
 
 #pragma once
 
+// Activer le modèle de montre matériel LilyGO T-Watch S3 Plus
+#define LILYGO_WATCH_S3_PLUS
+
 // ============================================================
 //  Identité de la montre / mineur
 // ============================================================
@@ -21,8 +24,8 @@
 // ============================================================
 //  WiFi
 // ============================================================
-#define CFG_WIFI_SSID       "LUMEYA"
-#define CFG_WIFI_PASSWORD   "00000000"
+#define CFG_WIFI_SSID       "abcdefghijklmnopqrstuvwxyz"
+#define CFG_WIFI_PASSWORD   "111111112211"
 
 // ============================================================
 //  Serveur API REST

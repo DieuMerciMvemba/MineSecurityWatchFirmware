@@ -13,7 +13,7 @@
 /**
  * @brief Crée l'écran liste des alertes.
  */
-lv_obj_t* uiAlertCreate();
+lv_obj_t* uiAlertCreate(lv_obj_t *parent = nullptr);
 
 /**
  * @brief Met à jour la liste des alertes.
@@ -36,7 +36,7 @@ lv_obj_t* uiAlertGetScreen();
 /**
  * @brief Crée l'écran d'urgence (fond rouge, texte SOS ou CHUTE).
  */
-lv_obj_t* uiEmergencyCreate();
+lv_obj_t* uiEmergencyCreate(lv_obj_t *parent = nullptr);
 
 /**
  * @brief Affiche l'écran SOS.

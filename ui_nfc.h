@@ -4,7 +4,7 @@
 #include <lvgl.h>
 
 // Créer l'écran NFC
-lv_obj_t* uiNfcCreate();
+lv_obj_t* uiNfcCreate(lv_obj_t *parent = nullptr);
 
 // Mettre à jour le statut NFC
 void uiNfcUpdateStatus(const char* status);

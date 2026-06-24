@@ -1,6 +1,7 @@
 #include "ui_power.h"
 #include "config.h"
 #include "LilyGoLib.h"
+#include "sensor_service.h"
 
 static lv_obj_t *s_screen = nullptr;
 static lv_obj_t *s_lblBattery = nullptr;
@@ -31,11 +32,12 @@ static void btn_shutdown_cb(lv_event_t *e) {
 
 // Callback bouton Retour
 static void btn_back_cb(lv_event_t *e) {
-    uiPowerHide();
+    extern void uiNavigateTo(int screen);
+    uiNavigateTo(0); // SCREEN_HOME
 }
 
-lv_obj_t* uiPowerCreate() {
-    s_screen = lv_obj_create(nullptr);
+lv_obj_t* uiPowerCreate(lv_obj_t *parent) {
+    s_screen = lv_obj_create(parent);
     lv_obj_set_style_bg_color(s_screen, lv_color_hex(0x0A0A0A), 0);
     lv_obj_set_style_bg_opa(s_screen, LV_OPA_COVER, 0);
     lv_obj_set_size(s_screen, LV_HOR_RES, LV_VER_RES);
@@ -178,6 +180,9 @@ void uiPowerHide() {
 void uiPowerSleep() {
     Serial.println("[POWER] Entrée en mode sleep...");
     
+    // Sauvegarder les pas avant de dormir
+    sensorSaveState();
+    
     // Écran noir
     lv_obj_clean(lv_screen_active());
     lv_obj_set_style_bg_color(lv_screen_active(), lv_color_black(), LV_PART_MAIN);
@@ -209,6 +214,9 @@ void uiPowerEcoMode(bool enable) {
 
 void uiPowerShutdown() {
     Serial.println("[POWER] Shutdown...");
+    
+    // Sauvegarder les pas avant l'arrêt
+    sensorSaveState();
     
     // Écran d'arrêt
     lv_obj_clean(lv_screen_active());

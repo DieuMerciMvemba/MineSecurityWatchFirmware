@@ -4,7 +4,7 @@
 #include <lvgl.h>
 
 // Créer l'écran Radio
-lv_obj_t* uiRadioCreate();
+lv_obj_t* uiRadioCreate(lv_obj_t *parent = nullptr);
 
 // Mettre à jour le statut radio
 void uiRadioUpdateStatus(const char* status);

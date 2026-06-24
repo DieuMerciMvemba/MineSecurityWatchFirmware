@@ -4,7 +4,7 @@
 #include <lvgl.h>
 
 // Créer l'écran boussole
-lv_obj_t* uiCompassCreate();
+lv_obj_t* uiCompassCreate(lv_obj_t *parent = nullptr);
 
 // Mettre à jour les données IMU
 void uiCompassUpdate(float heading, float roll, float pitch);

@@ -13,6 +13,7 @@
 #include "config.h"
 #include "sensor_service.h"
 #include "wifi_service.h"
+#include <LilyGoLib.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <freertos/FreeRTOS.h>
@@ -35,12 +36,18 @@ static uint32_t s_lastNtpSync = 0;
  *        Sans NTP, utilise millis() converti en secondes.
  */
 static void getTimestamp(char *buf, size_t len) {
-    // TODO: Intégrer NTP pour un vrai timestamp UTC
+#ifdef LILYGO_WATCH_S3_PLUS
+    RTC_DateTime dt = instance.rtc.getDateTime();
+    snprintf(buf, len, "%04u-%02u-%02uT%02u:%02u:%02uZ",
+             dt.getYear(), dt.getMonth(), dt.getDay(),
+             dt.getHour(), dt.getMinute(), dt.getSecond());
+#else
     uint32_t sec = millis() / 1000;
     uint32_t h   = (sec / 3600) % 24;
     uint32_t m   = (sec / 60) % 60;
     uint32_t s   = sec % 60;
     snprintf(buf, len, "2026-01-01T%02u:%02u:%02uZ", h, m, s);
+#endif
 }
 
 /**
@@ -223,6 +230,10 @@ bool apiSyncNTP() {
         if (now > 10000) {  // Si le timestamp est valide (> 1970)
             struct tm timeinfo;
             localtime_r(&now, &timeinfo);
+            
+#ifdef LILYGO_WATCH_S3_PLUS
+            instance.rtc.setDateTime(timeinfo);
+#endif
             
             char buffer[64];
             strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &timeinfo);

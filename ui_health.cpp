@@ -51,8 +51,8 @@ static RiskLevel computeRisk(const SensorData &d) {
     return RISK_LOW;
 }
 
-lv_obj_t* uiHealthCreate() {
-    s_screen = lv_obj_create(nullptr);
+lv_obj_t* uiHealthCreate(lv_obj_t *parent) {
+    s_screen = lv_obj_create(parent);
     lv_obj_set_style_bg_color(s_screen, lv_color_hex(0x0A0A0A), 0);
     lv_obj_set_style_bg_opa(s_screen, LV_OPA_COVER, 0);
     lv_obj_set_size(s_screen, LV_HOR_RES, LV_VER_RES);

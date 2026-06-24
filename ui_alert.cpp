@@ -44,8 +44,8 @@ static const char* alertTypeIcon(AlertType t) {
     }
 }
 
-lv_obj_t* uiAlertCreate() {
-    s_screenAlerts = lv_obj_create(nullptr);
+lv_obj_t* uiAlertCreate(lv_obj_t *parent) {
+    s_screenAlerts = lv_obj_create(parent);
     lv_obj_set_style_bg_color(s_screenAlerts, lv_color_hex(0x0A0A0A), 0);
     lv_obj_set_style_bg_opa(s_screenAlerts, LV_OPA_COVER, 0);
     lv_obj_set_size(s_screenAlerts, LV_HOR_RES, LV_VER_RES);
@@ -205,8 +205,8 @@ static void dismiss_event_cb(lv_event_t *e) {
     }
 }
 
-lv_obj_t* uiEmergencyCreate() {
-    s_screenEmerg = lv_obj_create(nullptr);
+lv_obj_t* uiEmergencyCreate(lv_obj_t *parent) {
+    s_screenEmerg = lv_obj_create(parent);
     lv_obj_set_style_bg_color(s_screenEmerg, lv_color_hex(0xCC0000), 0);
     lv_obj_set_style_bg_opa(s_screenEmerg, LV_OPA_COVER, 0);
     lv_obj_set_size(s_screenEmerg, LV_HOR_RES, LV_VER_RES);
@@ -275,8 +275,7 @@ void uiEmergencyShowSOS() {
     lv_label_set_text(s_lblEmergTitle, "S O S");
     lv_label_set_text(s_lblEmergSub, "Alerte SOS envoyée !");
     lv_anim_start(&s_pulseAnim);
-    lv_screen_load_anim(s_screenEmerg, LV_SCR_LOAD_ANIM_FADE_IN, 300, 0, false);
-    Serial.println("[UI] Écran SOS affiché");
+    Serial.println("[UI] Écran SOS préparé");
 }
 
 void uiEmergencyShowFall() {
@@ -284,8 +283,7 @@ void uiEmergencyShowFall() {
     lv_label_set_text(s_lblEmergTitle, "CHUTE !");
     lv_label_set_text(s_lblEmergSub, "Chute détectée – Alerte envoyée");
     lv_anim_start(&s_pulseAnim);
-    lv_screen_load_anim(s_screenEmerg, LV_SCR_LOAD_ANIM_FADE_IN, 300, 0, false);
-    Serial.println("[UI] Écran CHUTE affiché");
+    Serial.println("[UI] Écran CHUTE préparé");
 }
 
 void uiEmergencyHide() {

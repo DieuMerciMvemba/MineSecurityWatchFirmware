@@ -58,3 +58,8 @@ void sensorTask(void *param);
  * @brief Lance la tâche FreeRTOS de lecture des capteurs.
  */
 void startSensorTask();
+
+/**
+ * @brief Force la sauvegarde de l'état des capteurs (comme le nombre de pas) dans la NVS.
+ */
+void sensorSaveState();

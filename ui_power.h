@@ -4,7 +4,7 @@
 #include <lvgl.h>
 
 // Créer l'écran Power
-lv_obj_t* uiPowerCreate();
+lv_obj_t* uiPowerCreate(lv_obj_t *parent = nullptr);
 
 // Afficher l'écran Power
 void uiPowerShow();

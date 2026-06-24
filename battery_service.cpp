@@ -16,7 +16,7 @@ void batteryInit() {
 
 float batteryGetPercent() {
 #ifdef LILYGO_WATCH_S3_PLUS
-    return (float)instance.getBatteryPercent();
+    return (float)instance.pmu.getBatteryPercent();
 #else
     return 85.0f;  // Simulé
 #endif
@@ -24,7 +24,7 @@ float batteryGetPercent() {
 
 bool batteryIsCharging() {
 #ifdef LILYGO_WATCH_S3_PLUS
-    return instance.isCharging();
+    return instance.pmu.isCharging();
 #else
     return false;
 #endif
@@ -40,7 +40,7 @@ bool batteryIsLow() {
 
 uint16_t batteryGetVoltage() {
 #ifdef LILYGO_WATCH_S3_PLUS
-    return instance.getBatteryVoltage();
+    return instance.pmu.getBattVoltage();
 #else
     return 3800;  // mV simulé
 #endif

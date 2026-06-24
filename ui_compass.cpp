@@ -42,8 +42,8 @@ static lv_color_t getOrientationColor(float heading) {
     return lv_color_hex(0xFF6B00);
 }
 
-lv_obj_t* uiCompassCreate() {
-    s_screen = lv_obj_create(nullptr);
+lv_obj_t* uiCompassCreate(lv_obj_t *parent) {
+    s_screen = lv_obj_create(parent);
     lv_obj_set_style_bg_color(s_screen, lv_color_hex(0x0A0A0A), 0);
     lv_obj_set_style_bg_opa(s_screen, LV_OPA_COVER, 0);
     lv_obj_set_size(s_screen, LV_HOR_RES, LV_VER_RES);

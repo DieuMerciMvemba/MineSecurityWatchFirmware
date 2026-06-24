@@ -17,7 +17,7 @@
  * @brief Crée l'écran home (Dashboard).
  * @return Pointeur vers l'objet écran LVGL
  */
-lv_obj_t* uiHomeCreate();
+lv_obj_t* uiHomeCreate(lv_obj_t *parent = nullptr);
 
 /**
  * @brief Met à jour les données affichées.

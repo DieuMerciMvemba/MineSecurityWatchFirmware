@@ -10,6 +10,6 @@
 #include <lvgl.h>
 #include "data_model.h"
 
-lv_obj_t* uiNetworkCreate();
+lv_obj_t* uiNetworkCreate(lv_obj_t *parent = nullptr);
 void uiNetworkUpdate(const NetworkStatus &net);
 lv_obj_t* uiNetworkGetScreen();

@@ -64,6 +64,8 @@ static MotionType detectMotion(float mag) {
 //  Implémentation publique
 // ============================================================
 
+#include <Preferences.h>
+
 bool sensorInit() {
     s_mutex = xSemaphoreCreateMutex();
     if (!s_mutex) return false;
@@ -71,10 +73,19 @@ bool sensorInit() {
     memset(&s_latest, 0, sizeof(s_latest));
     s_latest.timestamp = millis();
 
-    // L'IMU est initialisé par instance.begin() dans le main
-    // Vérification simple : on lit une fois les données
-    // Si LilyGoLib expose l'IMU via instance.getAccelerometer()
-    // on suppose qu'il est disponible après begin().
+    // Restaurer les pas depuis la NVS
+    Preferences prefs;
+    prefs.begin("msw", true);
+    s_steps = prefs.getInt("steps", 0);
+    prefs.end();
+    Serial.printf("[SENSOR] Pas restaurés depuis la NVS : %ld\n", s_steps);
+
+#ifdef LILYGO_WATCH_S3_PLUS
+    // Configurer et activer l'accéléromètre BMA423
+    instance.sensor.configAccelerometer();
+    instance.sensor.enableAccelerometer();
+#endif
+
     Serial.println("[SENSOR] Service capteurs initialisé");
     return true;
 }
@@ -85,9 +96,17 @@ void sensorRead(SensorData &out) {
     float gx = 0, gy = 0, gz = 0;
 
 #ifdef LILYGO_WATCH_S3_PLUS
-    // API LilyGoLib : instance.getAccelerometer(ax, ay, az)
-    instance.getAccelerometer(ax, ay, az);
-    instance.getGyroscope(gx, gy, gz);
+    int16_t rawX = 0, rawY = 0, rawZ = 0;
+    instance.sensor.getAccelerometer(rawX, rawY, rawZ);
+    // Convertir en g (BMA423 en mode 4G par défaut donne 2048 LSB par G)
+    ax = (float)rawX * (4.0f / 2048.0f);
+    ay = (float)rawY * (4.0f / 2048.0f);
+    az = (float)rawZ * (4.0f / 2048.0f);
+
+    // Pas de gyroscope matériel sur la T-Watch S3 Plus
+    gx = 0.0f;
+    gy = 0.0f;
+    gz = 0.0f;
 #else
     // Valeurs simulées si capteur indisponible (dev)
     ax = 0.0f + (random(-10, 10) / 100.0f);
@@ -98,7 +117,14 @@ void sensorRead(SensorData &out) {
     float mag = magnitude(ax, ay, az);
 
     // Détection de pas
+    int32_t prevSteps = s_steps;
     detectSteps(mag);
+    if (s_steps != prevSteps && (s_steps % 5 == 0)) {
+        Preferences prefs;
+        prefs.begin("msw", false);
+        prefs.putInt("steps", s_steps);
+        prefs.end();
+    }
 
     // Détection de mouvement / chute
     MotionType motion = detectMotion(mag);
@@ -110,23 +136,28 @@ void sensorRead(SensorData &out) {
     // --- Lecture batterie ---
     float battPct = 0.0f;
 #ifdef LILYGO_WATCH_S3_PLUS
-    // LilyGoLib : instance.getBatteryPercent() retourne 0–100
-    battPct = (float)instance.getBatteryPercent();
+    battPct = (float)instance.pmu.getBatteryPercent();
 #else
     battPct = 85.0f;  // Simulé
 #endif
 
     // --- Température ---
-    float temp = 36.5f;  // TODO: lire capteur de température si disponible
+    float temp = 36.5f;
 #ifdef LILYGO_WATCH_S3_PLUS
-    // Certaines versions exposent instance.getTemperature()
-    // temp = instance.getTemperature();
+    // Lecture de la température intégrée de la puce BMA423
+    temp = instance.sensor.getTemperature(SensorBMA423::TEMP_DEG);
 #endif
 
     // --- GPS (optionnel) ---
     double lat = 0.0, lon = 0.0;
     bool gpsValid = false;
-    // TODO: instance.getGPS(lat, lon, gpsValid) si GPS disponible
+#ifdef LILYGO_WATCH_S3_PLUS
+    if (instance.gps.location.isValid()) {
+        lat = instance.gps.location.lat();
+        lon = instance.gps.location.lng();
+        gpsValid = true;
+    }
+#endif
 
     // --- Mise à jour de la structure ---
     out.battery     = battPct;
@@ -201,4 +232,12 @@ void startSensorTask() {
         nullptr,
         1   // Core 1 (Core 0 = radio)
     );
+}
+
+void sensorSaveState() {
+    Preferences prefs;
+    prefs.begin("msw", false);
+    prefs.putInt("steps", s_steps);
+    prefs.end();
+    Serial.printf("[SENSOR] État sauvegardé manuellement (Pas : %ld)\n", s_steps);
 }

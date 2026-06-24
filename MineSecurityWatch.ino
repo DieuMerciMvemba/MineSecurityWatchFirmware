@@ -34,6 +34,8 @@
 #include <freertos/task.h>
 #include <freertos/semphr.h>
 #include <freertos/queue.h>
+#include <sys/time.h>
+#include <time.h>
 
 // ============================================================
 //  Modules du projet
@@ -63,6 +65,7 @@
 /** Écran courant (0=Home, 1=Santé, 2=Réseau, 3=Alertes, 4=SOS, 5=GPS, 6=NFC, 7=Compass, 8=Power, 9=Radio) */
 static int           g_currentScreen  = SCREEN_HOME;
 static lv_obj_t     *g_screens[10]    = {nullptr};
+static lv_obj_t     *g_mainScreen    = nullptr;
 
 /** Queue des alertes internes (FreeRTOS) */
 static QueueHandle_t g_alertQueue;
@@ -102,63 +105,58 @@ void startAlertTask();
  *        Thread-safe via mutex LVGL.
  */
 void uiNavigateTo(int screen) {
-    if (screen < 0 || screen > 4) return;
+    if (screen < 0 || screen > SCREEN_RADIO) return;
     if (screen == g_currentScreen && screen != SCREEN_SOS) return;
 
-    lv_obj_t *target = g_screens[screen];
-    if (!target) return;
+    // Définir la position (col, row) de chaque écran dans le tileview
+    // SCREEN_HOME (0)    -> col 1, row 1
+    // SCREEN_HEALTH (1)  -> col 2, row 1
+    // SCREEN_NETWORK (2) -> col 6, row 1
+    // SCREEN_ALERTS (3)  -> col 0, row 1
+    // SCREEN_SOS (4)     -> col 1, row 0
+    // SCREEN_GPS (5)     -> col 3, row 1
+    // SCREEN_NFC (6)     -> col 7, row 1
+    // SCREEN_COMPASS (7) -> col 4, row 1
+    // SCREEN_POWER (8)   -> col 1, row 2
+    // SCREEN_RADIO (9)   -> col 5, row 1
+    int cols[] = { 1, 2, 6, 0, 1, 3, 7, 4, 1, 5 };
+    int rows[] = { 1, 1, 1, 1, 0, 1, 1, 1, 2, 1 };
 
-    // Déterminer la direction de l'animation
-    lv_scr_load_anim_t anim;
-    if (screen == SCREEN_SOS || screen == SCREEN_ALERTS) {
-        anim = LV_SCR_LOAD_ANIM_FADE_IN;
-    } else if (screen > g_currentScreen) {
-        anim = LV_SCR_LOAD_ANIM_MOVE_LEFT;
-    } else {
-        anim = LV_SCR_LOAD_ANIM_MOVE_RIGHT;
-    }
+    int col = cols[screen];
+    int row = rows[screen];
 
     if (xSemaphoreTake(g_lvglMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        lv_screen_load_anim(target, anim, 250, 0, false);
+        lv_tileview_set_tile_by_index(g_mainScreen, col, row, LV_ANIM_ON);
         xSemaphoreGive(g_lvglMutex);
     }
 
     g_currentScreen = screen;
-    Serial.printf("[NAV] → Écran %d\n", screen);
+    Serial.printf("[NAV] → Écran %d (Col:%d, Row:%d)\n", screen, col, row);
 }
 
 // ============================================================
-//  Gestion des swipes (navigation tactile)
+//  Gestion des swipes (navigation par Tileview native)
 // ============================================================
 
-static void screen_gesture_cb(lv_event_t *e) {
+static void tileview_event_cb(lv_event_t *e) {
     lv_event_code_t code = lv_event_get_code(e);
-    if (code != LV_EVENT_GESTURE) return;
+    if (code == LV_EVENT_VALUE_CHANGED) {
+        lv_obj_t *tv = (lv_obj_t*)lv_event_get_target(e);
+        lv_obj_t *tile = lv_tileview_get_tile_act(tv);
 
-    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_active());
-
-    // Swipe gauche → écran suivant
-    if (dir == LV_DIR_LEFT) {
-        int next = g_currentScreen + 1;
-        if (next > SCREEN_RADIO) next = SCREEN_HOME;
-        uiNavigateTo(next);
-    }
-    // Swipe droit → écran précédent
-    else if (dir == LV_DIR_RIGHT) {
-        int prev = g_currentScreen - 1;
-        if (prev < SCREEN_HOME) prev = SCREEN_RADIO;
-        uiNavigateTo(prev);
-    }
-}
-
-static void registerSwipeHandlers() {
-    for (int i = 0; i <= SCREEN_RADIO; i++) {
-        if (g_screens[i]) {
-            lv_obj_add_event_cb(g_screens[i], screen_gesture_cb,
-                                LV_EVENT_GESTURE, nullptr);
-            lv_obj_add_flag(g_screens[i], LV_OBJ_FLAG_GESTURE_BUBBLE);
+        // Retrouver quel écran correspond à cette tuile
+        for (int i = 0; i <= SCREEN_RADIO; i++) {
+            if (g_screens[i] && lv_obj_get_parent(g_screens[i]) == tile) {
+                g_currentScreen = i;
+                Serial.printf("[TILE] Écran actif mis à jour : %d\n", i);
+                break;
+            }
         }
     }
+}
+
+void registerSwipeHandlers() {
+    // La navigation par glissement est maintenant gérée nativement par le conteneur lv_tileview
 }
 
 // ============================================================
@@ -180,11 +178,12 @@ void onSOSPressed() {
 void triggerSOS() {
     // Vibration
 #ifdef LILYGO_WATCH_S3_PLUS
-    instance.vibrate(500);  // 500ms
+    instance.vibrator();
 #endif
 
     // Écran rouge SOS
     uiEmergencyShowSOS();
+    uiNavigateTo(SCREEN_SOS);
 
     // Données capteurs actuelles
     SensorData data = sensorGetLatest();
@@ -213,11 +212,12 @@ void triggerFall() {
 
     // Vibration prolongée
 #ifdef LILYGO_WATCH_S3_PLUS
-    instance.vibrate(1000);
+    instance.vibrator();
 #endif
 
     // Écran rouge CHUTE
     uiEmergencyShowFall();
+    uiNavigateTo(SCREEN_SOS);
 
     // Données capteurs
     SensorData data = sensorGetLatest();
@@ -299,7 +299,7 @@ void alertTask(void *param) {
             // Vibration brève pour toute alerte superviseur
             if (item.fromSupervisor) {
 #ifdef LILYGO_WATCH_S3_PLUS
-                instance.vibrate(200);
+                instance.vibrator();
 #endif
             }
         }
@@ -367,11 +367,13 @@ static void uiTask(void *param) {
                 xSemaphoreGive(g_netMutex);
             }
 
-            // Heure (sans NTP : secondes depuis boot)
-            uint32_t sec  = now / 1000;
-            int h = (sec / 3600) % 24;
-            int m = (sec / 60)   % 60;
-            int s = sec          % 60;
+            // Récupérer l'heure système courante (initialisée depuis la RTC ou NTP)
+            time_t rawTime = time(nullptr);
+            struct tm timeinfo;
+            localtime_r(&rawTime, &timeinfo);
+            int h = timeinfo.tm_hour;
+            int m = timeinfo.tm_min;
+            int s = timeinfo.tm_sec;
 
             if (xSemaphoreTake(g_lvglMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                 switch (g_currentScreen) {
@@ -458,6 +460,23 @@ void setup() {
     instance.begin();
     Serial.println("[INIT] ✅ LilyGoLib OK");
 
+    // Initialiser le temps système ESP32 depuis la puce RTC matérielle
+#ifdef LILYGO_WATCH_S3_PLUS
+    if (instance.rtc.isClockIntegrityGuaranteed()) {
+        RTC_DateTime dt = instance.rtc.getDateTime();
+        struct tm timeinfo = dt.toUnixTime();
+        time_t t = mktime(&timeinfo);
+        struct timeval tv = { .tv_sec = t, .tv_usec = 0 };
+        settimeofday(&tv, nullptr);
+        
+        char timeBuf[64];
+        strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", &timeinfo);
+        Serial.printf("[INIT] RTC matérielle lue : %s\n", timeBuf);
+    } else {
+        Serial.println("[INIT] ⚠ RTC non initialisée ou oscillateur arrêté");
+    }
+#endif
+
     // Luminosité maximale
     instance.setBrightness(DEVICE_MAX_BRIGHTNESS_LEVEL);
 
@@ -484,22 +503,49 @@ void setup() {
     // --------------------------------------------------------
     Serial.println("[INIT] Construction des écrans...");
 
-    g_screens[SCREEN_HOME]    = uiHomeCreate();
-    g_screens[SCREEN_HEALTH]  = uiHealthCreate();
-    g_screens[SCREEN_NETWORK] = uiNetworkCreate();
-    g_screens[SCREEN_ALERTS]  = uiAlertCreate();
-    g_screens[SCREEN_SOS]     = uiEmergencyCreate();
-    g_screens[SCREEN_GPS]     = uiGpsCreate();
-    g_screens[SCREEN_NFC]     = uiNfcCreate();
-    g_screens[SCREEN_COMPASS] = uiCompassCreate();
-    g_screens[SCREEN_POWER]   = uiPowerCreate();
-    g_screens[SCREEN_RADIO]   = uiRadioCreate();
+    // --- Construction du conteneur Tileview de navigation 2D (Method Flutter/Factory) ---
+    g_mainScreen = lv_tileview_create(nullptr);
+    lv_obj_set_style_bg_color(g_mainScreen, lv_color_hex(0x0A0A0A), 0);
+    lv_obj_set_style_bg_opa(g_mainScreen, LV_OPA_COVER, 0);
+    lv_obj_add_event_cb(g_mainScreen, tileview_event_cb, LV_EVENT_VALUE_CHANGED, nullptr);
 
-    // Enregistrement des gestionnaires de swipe
-    registerSwipeHandlers();
+    // Ajouter les tuiles (tiles) : (col, row, allowed_dirs)
+    lv_obj_t *tile_alerts   = lv_tileview_add_tile(g_mainScreen, 0, 1, LV_DIR_HOR);
+    lv_obj_t *tile_home     = lv_tileview_add_tile(g_mainScreen, 1, 1, LV_DIR_ALL); // Home permet horizontal + vertical
+    lv_obj_t *tile_health   = lv_tileview_add_tile(g_mainScreen, 2, 1, LV_DIR_HOR);
+    lv_obj_t *tile_gps      = lv_tileview_add_tile(g_mainScreen, 3, 1, LV_DIR_HOR);
+    lv_obj_t *tile_compass  = lv_tileview_add_tile(g_mainScreen, 4, 1, LV_DIR_HOR);
+    lv_obj_t *tile_radio    = lv_tileview_add_tile(g_mainScreen, 5, 1, LV_DIR_HOR);
+    lv_obj_t *tile_network  = lv_tileview_add_tile(g_mainScreen, 6, 1, LV_DIR_HOR);
+    lv_obj_t *tile_nfc      = lv_tileview_add_tile(g_mainScreen, 7, 1, LV_DIR_HOR);
 
-    // Afficher l'écran Home au démarrage
-    lv_screen_load(g_screens[SCREEN_HOME]);
+    lv_obj_t *tile_sos      = lv_tileview_add_tile(g_mainScreen, 1, 0, LV_DIR_VER); // SOS en haut de Home
+    lv_obj_t *tile_power    = lv_tileview_add_tile(g_mainScreen, 1, 2, LV_DIR_VER); // Power en bas de Home
+
+    // Construction des écrans LVGL directement sur leurs tuiles respectives
+    g_screens[SCREEN_ALERTS]  = uiAlertCreate(tile_alerts);
+    g_screens[SCREEN_HOME]    = uiHomeCreate(tile_home);
+    g_screens[SCREEN_HEALTH]  = uiHealthCreate(tile_health);
+    g_screens[SCREEN_GPS]     = uiGpsCreate(tile_gps);
+    g_screens[SCREEN_COMPASS] = uiCompassCreate(tile_compass);
+    g_screens[SCREEN_RADIO]   = uiRadioCreate(tile_radio);
+    g_screens[SCREEN_NETWORK] = uiNetworkCreate(tile_network);
+    g_screens[SCREEN_NFC]     = uiNfcCreate(tile_nfc);
+    g_screens[SCREEN_SOS]     = uiEmergencyCreate(tile_sos);
+    g_screens[SCREEN_POWER]   = uiPowerCreate(tile_power);
+
+    // Ajuster la taille des écrans pour remplir exactement les tuiles
+    for (int i = 0; i <= SCREEN_RADIO; i++) {
+        if (g_screens[i]) {
+            lv_obj_set_size(g_screens[i], LV_HOR_RES, LV_VER_RES);
+            lv_obj_set_pos(g_screens[i], 0, 0);
+        }
+    }
+
+    // Afficher le Tileview et se positionner sur Home (col 1, row 1)
+    lv_screen_load(g_mainScreen);
+    lv_obj_update_layout(g_mainScreen); // Force le calcul du layout pour pouvoir scroller immédiatement
+    lv_tileview_set_tile_by_index(g_mainScreen, 1, 1, LV_ANIM_OFF);
     g_currentScreen = SCREEN_HOME;
 
     Serial.println("[INIT] ✅ Écrans OK");

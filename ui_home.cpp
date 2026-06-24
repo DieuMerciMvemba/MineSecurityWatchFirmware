@@ -152,11 +152,11 @@ static lv_obj_t* createCard(lv_obj_t *parent, int x, int y, int w, int h,
 // ============================================================
 //  Construction de l'écran Home
 // ============================================================
-lv_obj_t* uiHomeCreate() {
+lv_obj_t* uiHomeCreate(lv_obj_t *parent) {
     initStyles();
 
     // --- Écran principal ---
-    s_screen = lv_obj_create(nullptr);
+    s_screen = lv_obj_create(parent);
     lv_obj_add_style(s_screen, &s_styleScreen, 0);
     lv_obj_set_size(s_screen, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_flex_flow(s_screen, LV_FLEX_FLOW_COLUMN);
