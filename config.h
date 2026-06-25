@@ -67,14 +67,15 @@
 #define CFG_CRIT_BATTERY        10      // % – arrêt imminent
 
 // ============================================================
+// ============================================================
 //  FreeRTOS – Tailles des stacks (mots de 4 octets)
 // ============================================================
-#define CFG_STACK_UI            6144
+#define CFG_STACK_UI            10240
 #define CFG_STACK_SENSORS       4096
 #define CFG_STACK_WIFI          4096
-#define CFG_STACK_API           6144
+#define CFG_STACK_API           8192
 #define CFG_STACK_LORA          4096
-#define CFG_STACK_ALERTS        2048
+#define CFG_STACK_ALERTS        4096
 
 // ============================================================
 //  FreeRTOS – Priorités (0 = plus faible, 5 = plus haute)
@@ -84,7 +85,7 @@
 #define CFG_PRIO_WIFI           2
 #define CFG_PRIO_API            2
 #define CFG_PRIO_LORA           3
-#define CFG_PRIO_ALERTS         0   // Alertes = priorité maximale
+#define CFG_PRIO_ALERTS         5   // Alertes = priorité maximale
 
 // ============================================================
 //  Numérotation des écrans
