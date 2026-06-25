@@ -11,6 +11,7 @@
 
 #include "api_service.h"
 #include "config.h"
+#include "config_storage.h"
 #include "sensor_service.h"
 #include "wifi_service.h"
 #include <LilyGoLib.h>
@@ -65,7 +66,7 @@ static bool httpPost(const char *endpoint, const String &payload) {
     HTTPClient http;
     char url[128];
     snprintf(url, sizeof(url), "http://%s:%d%s",
-             CFG_API_HOST, CFG_API_PORT, endpoint);
+             g_config.apiHost, g_config.apiPort, endpoint);
 
     Serial.printf("[API] POST %s\n", url);
 
@@ -114,7 +115,7 @@ bool apiSendData(const SensorData &data) {
         "\"lng\":%.6f,"
         "\"timestamp\":\"%s\""
         "}",
-        CFG_WORKER_ID,
+        g_config.workerId,
         data.battery,
         data.temperature,
         data.steps,
@@ -124,7 +125,7 @@ bool apiSendData(const SensorData &data) {
         ts
     );
 
-    return httpPost(CFG_API_ENDPOINT, String(payload));
+    return httpPost(g_config.apiEndpoint, String(payload));
 }
 
 bool apiSendSOS(const SensorData &data) {
@@ -141,7 +142,7 @@ bool apiSendSOS(const SensorData &data) {
         "\"lng\":%.6f,"
         "\"timestamp\":\"%s\""
         "}",
-        CFG_WORKER_ID,
+        g_config.workerId,
         data.battery,
         data.latitude,
         data.longitude,
@@ -149,7 +150,7 @@ bool apiSendSOS(const SensorData &data) {
     );
 
     Serial.println("[API] 🆘 Envoi SOS au serveur");
-    return httpPost(CFG_API_SOS, String(payload));
+    return httpPost(g_config.apiSosEndpoint, String(payload));
 }
 
 bool apiSendFallAlert(const SensorData &data) {
@@ -166,7 +167,7 @@ bool apiSendFallAlert(const SensorData &data) {
         "\"lng\":%.6f,"
         "\"timestamp\":\"%s\""
         "}",
-        CFG_WORKER_ID,
+        g_config.workerId,
         data.battery,
         data.latitude,
         data.longitude,
@@ -174,7 +175,7 @@ bool apiSendFallAlert(const SensorData &data) {
     );
 
     Serial.println("[API] ⚠️  Envoi alerte CHUTE au serveur");
-    return httpPost(CFG_API_SOS, String(payload));
+    return httpPost(g_config.apiSosEndpoint, String(payload));
 }
 
 bool apiIsConnected() {

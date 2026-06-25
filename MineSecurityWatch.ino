@@ -56,7 +56,11 @@
 #include "ui_compass.h"
 #include "ui_power.h"
 #include "ui_radio.h"
+#include "ui_settings.h"
+#include "ui_images.h"
+#include "config_storage.h"
 #include "sd_logger.h"
+
 
 // ============================================================
 //  Variables globales d'état
@@ -64,7 +68,7 @@
 
 /** Écran courant (0=Home, 1=Santé, 2=Réseau, 3=Alertes, 4=SOS, 5=GPS, 6=NFC, 7=Compass, 8=Power, 9=Radio) */
 static int           g_currentScreen  = SCREEN_HOME;
-static lv_obj_t     *g_screens[10]    = {nullptr};
+static lv_obj_t     *g_screens[11]    = {nullptr};
 static lv_obj_t     *g_mainScreen    = nullptr;
 
 /** Queue des alertes internes (FreeRTOS) */
@@ -81,6 +85,7 @@ static SemaphoreHandle_t g_netMutex;
 
 /** Mutex LVGL (accès depuis plusieurs tâches) */
 static SemaphoreHandle_t g_lvglMutex;
+static TaskHandle_t      g_uiTaskHandle = nullptr;
 
 /** Horodatage interne (secondes depuis boot) */
 static uint32_t g_bootTime = 0;
@@ -105,29 +110,43 @@ void startAlertTask();
  *        Thread-safe via mutex LVGL.
  */
 void uiNavigateTo(int screen) {
-    if (screen < 0 || screen > SCREEN_RADIO) return;
+    if (screen < 0 || screen > SCREEN_SETTINGS) return;
     if (screen == g_currentScreen && screen != SCREEN_SOS) return;
 
     // Définir la position (col, row) de chaque écran dans le tileview
-    // SCREEN_HOME (0)    -> col 1, row 1
-    // SCREEN_HEALTH (1)  -> col 2, row 1
-    // SCREEN_NETWORK (2) -> col 6, row 1
-    // SCREEN_ALERTS (3)  -> col 0, row 1
-    // SCREEN_SOS (4)     -> col 1, row 0
-    // SCREEN_GPS (5)     -> col 3, row 1
-    // SCREEN_NFC (6)     -> col 7, row 1
-    // SCREEN_COMPASS (7) -> col 4, row 1
-    // SCREEN_POWER (8)   -> col 1, row 2
-    // SCREEN_RADIO (9)   -> col 5, row 1
-    int cols[] = { 1, 2, 6, 0, 1, 3, 7, 4, 1, 5 };
-    int rows[] = { 1, 1, 1, 1, 0, 1, 1, 1, 2, 1 };
+    // SCREEN_HOME (0)     -> col 1, row 1
+    // SCREEN_HEALTH (1)   -> col 2, row 1
+    // SCREEN_NETWORK (2)  -> col 6, row 1
+    // SCREEN_ALERTS (3)   -> col 0, row 1
+    // SCREEN_SOS (4)      -> col 1, row 0
+    // SCREEN_GPS (5)      -> col 3, row 1
+    // SCREEN_NFC (6)      -> col 7, row 1
+    // SCREEN_COMPASS (7)  -> col 4, row 1
+    // SCREEN_POWER (8)    -> col 1, row 2
+    // SCREEN_RADIO (9)    -> col 5, row 1
+    // SCREEN_SETTINGS (10)-> col 1, row 3
+    int cols[] = { 1, 2, 6, 0, 1, 3, 7, 4, 1, 5, 1 };
+    int rows[] = { 1, 1, 1, 1, 0, 1, 1, 1, 2, 1, 3 };
 
     int col = cols[screen];
     int row = rows[screen];
 
-    if (xSemaphoreTake(g_lvglMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    bool isUiTask = (xTaskGetCurrentTaskHandle() == g_uiTaskHandle);
+    bool hasMutex = false;
+
+    if (isUiTask) {
+        hasMutex = true;
+    } else {
+        if (xSemaphoreTake(g_lvglMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            hasMutex = true;
+        }
+    }
+
+    if (hasMutex) {
         lv_tileview_set_tile_by_index(g_mainScreen, col, row, LV_ANIM_ON);
-        xSemaphoreGive(g_lvglMutex);
+        if (!isUiTask) {
+            xSemaphoreGive(g_lvglMutex);
+        }
     }
 
     g_currentScreen = screen;
@@ -145,7 +164,7 @@ static void tileview_event_cb(lv_event_t *e) {
         lv_obj_t *tile = lv_tileview_get_tile_act(tv);
 
         // Retrouver quel écran correspond à cette tuile
-        for (int i = 0; i <= SCREEN_RADIO; i++) {
+        for (int i = 0; i <= SCREEN_SETTINGS; i++) {
             if (g_screens[i] && lv_obj_get_parent(g_screens[i]) == tile) {
                 g_currentScreen = i;
                 Serial.printf("[TILE] Écran actif mis à jour : %d\n", i);
@@ -387,6 +406,28 @@ static void uiTask(void *param) {
                     case SCREEN_NETWORK:
                         uiNetworkUpdate(net);
                         break;
+                    case SCREEN_GPS:
+                        uiGpsUpdate(data.latitude, data.longitude, 0.0f, data.gpsValid ? 4 : 0);
+                        break;
+                    case SCREEN_COMPASS:
+                        {
+                            float pitch = atan2f(-data.accelX, sqrtf(data.accelY * data.accelY + data.accelZ * data.accelZ)) * 180.0f / M_PI;
+                            float roll = atan2f(data.accelY, data.accelZ) * 180.0f / M_PI;
+                            static float heading = 0.0f;
+                            if (data.motion == MOTION_WALKING || data.motion == MOTION_RUNNING) {
+                                heading += (data.motion == MOTION_RUNNING) ? 2.5f : 1.0f;
+                                if (heading >= 360.0f) heading -= 360.0f;
+                            }
+                            uiCompassUpdate(heading, roll, pitch);
+                        }
+                        break;
+                    case SCREEN_POWER:
+                        uiPowerUpdate(data.battery, batteryGetVoltage());
+                        break;
+                    case SCREEN_SETTINGS:
+                        uiSettingsUpdate(g_config.apEnabled, wifiGetAPIP().c_str(), wifiGetIP().c_str());
+                        break;
+
                     default:
                         break;
                 }
@@ -431,7 +472,7 @@ static void startUITask() {
         CFG_STACK_UI,
         nullptr,
         CFG_PRIO_UI,
-        nullptr,
+        &g_uiTaskHandle,
         1   // Core 1 = rendu graphique
     );
 }
@@ -444,13 +485,16 @@ void setup() {
     Serial.begin(115200);
     delay(500);
 
+    // Initialiser la configuration depuis la NVS
+    configInit();
+
     Serial.println("\n");
     Serial.println("╔══════════════════════════════════════╗");
     Serial.println("║   MINE SECURITY WATCH  v1.0.0        ║");
     Serial.println("║   LilyGO T-Watch S3 Plus             ║");
     Serial.println("╚══════════════════════════════════════╝");
-    Serial.printf("  Worker : %s (%s)\n", CFG_WORKER_NAME, CFG_WORKER_ID);
-    Serial.printf("  Zone   : %s\n", CFG_WORKER_ZONE);
+    Serial.printf("  Worker : %s (%s)\n", g_config.workerName, g_config.workerId);
+    Serial.printf("  Zone   : %s\n", g_config.workerZone);
     Serial.println();
 
     // --------------------------------------------------------
@@ -488,6 +532,43 @@ void setup() {
     Serial.println("[INIT] ✅ LVGL OK");
 
     // --------------------------------------------------------
+    //  Splash Screen (3 secondes)
+    // --------------------------------------------------------
+    Serial.println("[INIT] Affichage Écran de Démarrage...");
+    lv_obj_t *splashScreen = lv_obj_create(nullptr);
+    lv_obj_set_style_bg_color(splashScreen, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(splashScreen, LV_OPA_COVER, 0);
+
+    // Image logo : img_logo_480x222 (480x222)
+    lv_obj_t *logoImg = lv_image_create(splashScreen);
+    lv_image_set_src(logoImg, &img_logo_480x222);
+    lv_obj_align(logoImg, LV_ALIGN_CENTER, 0, -40);
+
+    // Barre de chargement
+    lv_obj_t *loadingBar = lv_bar_create(splashScreen);
+    lv_obj_set_size(loadingBar, 240, 15);
+    lv_obj_align(loadingBar, LV_ALIGN_CENTER, 0, 100);
+    lv_obj_set_style_bg_color(loadingBar, lv_color_hex(0x333333), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(loadingBar, lv_color_hex(0xFF6B00), LV_PART_INDICATOR);
+    lv_bar_set_value(loadingBar, 0, LV_ANIM_OFF);
+
+    lv_screen_load(splashScreen);
+
+    // Animer la barre sur 3 secondes (3000 ms)
+    uint32_t startMs = millis();
+    while (millis() - startMs < 3000) {
+        float progress = (float)(millis() - startMs) / 3000.0f;
+        int barVal = progress * 100;
+        if (barVal > 100) barVal = 100;
+        
+        lv_bar_set_value(loadingBar, barVal, LV_ANIM_OFF);
+        
+        lv_timer_handler();
+        delay(10);
+    }
+
+
+    // --------------------------------------------------------
     //  Mutex et queues FreeRTOS
     // --------------------------------------------------------
     g_lvglMutex  = xSemaphoreCreateMutex();
@@ -521,21 +602,23 @@ void setup() {
 
     lv_obj_t *tile_sos      = lv_tileview_add_tile(g_mainScreen, 1, 0, LV_DIR_VER); // SOS en haut de Home
     lv_obj_t *tile_power    = lv_tileview_add_tile(g_mainScreen, 1, 2, LV_DIR_VER); // Power en bas de Home
+    lv_obj_t *tile_settings = lv_tileview_add_tile(g_mainScreen, 1, 3, LV_DIR_NONE); // Pas de swipe direct
 
     // Construction des écrans LVGL directement sur leurs tuiles respectives
-    g_screens[SCREEN_ALERTS]  = uiAlertCreate(tile_alerts);
-    g_screens[SCREEN_HOME]    = uiHomeCreate(tile_home);
-    g_screens[SCREEN_HEALTH]  = uiHealthCreate(tile_health);
-    g_screens[SCREEN_GPS]     = uiGpsCreate(tile_gps);
-    g_screens[SCREEN_COMPASS] = uiCompassCreate(tile_compass);
-    g_screens[SCREEN_RADIO]   = uiRadioCreate(tile_radio);
-    g_screens[SCREEN_NETWORK] = uiNetworkCreate(tile_network);
-    g_screens[SCREEN_NFC]     = uiNfcCreate(tile_nfc);
-    g_screens[SCREEN_SOS]     = uiEmergencyCreate(tile_sos);
-    g_screens[SCREEN_POWER]   = uiPowerCreate(tile_power);
+    g_screens[SCREEN_ALERTS]   = uiAlertCreate(tile_alerts);
+    g_screens[SCREEN_HOME]     = uiHomeCreate(tile_home);
+    g_screens[SCREEN_HEALTH]   = uiHealthCreate(tile_health);
+    g_screens[SCREEN_GPS]      = uiGpsCreate(tile_gps);
+    g_screens[SCREEN_COMPASS]  = uiCompassCreate(tile_compass);
+    g_screens[SCREEN_RADIO]    = uiRadioCreate(tile_radio);
+    g_screens[SCREEN_NETWORK]  = uiNetworkCreate(tile_network);
+    g_screens[SCREEN_NFC]      = uiNfcCreate(tile_nfc);
+    g_screens[SCREEN_SOS]      = uiEmergencyCreate(tile_sos);
+    g_screens[SCREEN_POWER]    = uiPowerCreate(tile_power);
+    g_screens[SCREEN_SETTINGS] = uiSettingsCreate(tile_settings);
 
     // Ajuster la taille des écrans pour remplir exactement les tuiles
-    for (int i = 0; i <= SCREEN_RADIO; i++) {
+    for (int i = 0; i <= SCREEN_SETTINGS; i++) {
         if (g_screens[i]) {
             lv_obj_set_size(g_screens[i], LV_HOR_RES, LV_VER_RES);
             lv_obj_set_pos(g_screens[i], 0, 0);
@@ -547,6 +630,9 @@ void setup() {
     lv_obj_update_layout(g_mainScreen); // Force le calcul du layout pour pouvoir scroller immédiatement
     lv_tileview_set_tile_by_index(g_mainScreen, 1, 1, LV_ANIM_OFF);
     g_currentScreen = SCREEN_HOME;
+
+    // Supprimer l'écran de démarrage temporaire
+    lv_obj_delete(splashScreen);
 
     Serial.println("[INIT] ✅ Écrans OK");
 

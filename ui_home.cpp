@@ -14,6 +14,17 @@
 
 #include "ui_home.h"
 #include "config.h"
+#include "config_storage.h"
+#include "ui_settings.h"
+#include "ui_images.h"
+
+static void settings_click_cb(lv_event_t *e) {
+    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
+        uiSettingsResetLock();
+        extern void uiNavigateTo(int screen);
+        uiNavigateTo(SCREEN_SETTINGS);
+    }
+}
 
 // ============================================================
 //  Variables internes (handles LVGL)
@@ -80,18 +91,19 @@ static void initStyles() {
     lv_style_set_bg_opa(&s_styleScreen, LV_OPA_COVER);
     lv_style_set_border_width(&s_styleScreen, 0);
 
-    // Style card foncé arrondie
+    // Style card foncé arrondie (effet glassmorphism)
     lv_style_init(&s_styleCard);
-    lv_style_set_bg_color(&s_styleCard, lv_color_hex(0x1A1A1A));
-    lv_style_set_bg_opa(&s_styleCard, LV_OPA_COVER);
+    lv_style_set_bg_color(&s_styleCard, lv_color_hex(0x121212));
+    lv_style_set_bg_opa(&s_styleCard, LV_OPA_70);
     lv_style_set_radius(&s_styleCard, 16);
     lv_style_set_border_width(&s_styleCard, 1);
-    lv_style_set_border_color(&s_styleCard, lv_color_hex(0x333333));
+    lv_style_set_border_color(&s_styleCard, lv_color_hex(0x555555));
+    lv_style_set_border_opa(&s_styleCard, LV_OPA_40);
     lv_style_set_pad_all(&s_styleCard, 10);
 
     // Label titre card
     lv_style_init(&s_styleCardLabel);
-    lv_style_set_text_color(&s_styleCardLabel, lv_color_hex(0x888888));
+    lv_style_set_text_color(&s_styleCardLabel, lv_color_hex(0xCCCCCC));
     lv_style_set_text_font(&s_styleCardLabel, &lv_font_montserrat_12);
 
     // Valeur métrique
@@ -166,6 +178,14 @@ lv_obj_t* uiHomeCreate(lv_obj_t *parent) {
     lv_obj_set_scroll_dir(s_screen, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(s_screen, LV_SCROLLBAR_MODE_AUTO);
 
+    // Background Wallpaper Image (flottant en arrière-plan)
+    lv_obj_t *bg = lv_image_create(s_screen);
+    lv_image_set_src(bg, &img_background);
+    lv_obj_set_size(bg, 480, 222);
+    lv_obj_align(bg, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_add_flag(bg, LV_OBJ_FLAG_FLOATING);
+    lv_obj_move_background(bg);
+
     int SW = LV_HOR_RES;  // Largeur écran (240 ou 480px)
 
     // --------------------------------------------------------
@@ -173,8 +193,8 @@ lv_obj_t* uiHomeCreate(lv_obj_t *parent) {
     // --------------------------------------------------------
     lv_obj_t *header = lv_obj_create(s_screen);
     lv_obj_set_size(header, LV_PCT(100), 52);
-    lv_obj_set_style_bg_color(header, lv_color_hex(0x0D0D0D), 0);
-    lv_obj_set_style_bg_opa(header, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(header, lv_color_hex(0x0C0C0C), 0);
+    lv_obj_set_style_bg_opa(header, LV_OPA_80, 0);
     lv_obj_set_style_border_width(header, 0, 0);
     lv_obj_set_style_border_side(header, LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_border_color(header, lv_color_hex(0xFF6B00), 0);
@@ -202,13 +222,13 @@ lv_obj_t* uiHomeCreate(lv_obj_t *parent) {
 
     // Nom du mineur
     s_lblWorker = lv_label_create(nameContainer);
-    lv_label_set_text(s_lblWorker, CFG_WORKER_NAME);
+    lv_label_set_text(s_lblWorker, g_config.workerName);
     lv_obj_set_style_text_color(s_lblWorker, lv_color_hex(0xFFFFFF), 0);
     lv_obj_set_style_text_font(s_lblWorker, &lv_font_montserrat_14, 0);
 
     // Zone
     s_lblZone = lv_label_create(nameContainer);
-    lv_label_set_text(s_lblZone, CFG_WORKER_ZONE);
+    lv_label_set_text(s_lblZone, g_config.workerZone);
     lv_obj_set_style_text_color(s_lblZone, lv_color_hex(0xFF6B00), 0);
     lv_obj_set_style_text_font(s_lblZone, &lv_font_montserrat_10, 0);
 
@@ -229,6 +249,20 @@ lv_obj_t* uiHomeCreate(lv_obj_t *parent) {
     lv_label_set_text(s_lblLora, LV_SYMBOL_BLUETOOTH);
     lv_obj_set_style_text_color(s_lblLora, lv_color_hex(0x888888), 0);
     lv_obj_set_style_text_font(s_lblLora, &lv_font_montserrat_16, 0);
+
+    // Bouton engrenage paramètres
+    lv_obj_t *btnSettings = lv_button_create(netContainer);
+    lv_obj_set_size(btnSettings, 24, 24);
+    lv_obj_set_style_bg_opa(btnSettings, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(btnSettings, 0, 0);
+    lv_obj_set_style_pad_all(btnSettings, 0, 0);
+    lv_obj_add_event_cb(btnSettings, settings_click_cb, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *lblSettings = lv_label_create(btnSettings);
+    lv_label_set_text(lblSettings, LV_SYMBOL_SETTINGS);
+    lv_obj_center(lblSettings);
+    lv_obj_set_style_text_color(lblSettings, lv_color_hex(0xFF6B00), 0);
+    lv_obj_set_style_text_font(lblSettings, &lv_font_montserrat_16, 0);
 
     // --------------------------------------------------------
     //  HEURE CENTRALE – Grande et lisible
@@ -306,6 +340,10 @@ lv_obj_t* uiHomeCreate(lv_obj_t *parent) {
 // ============================================================
 void uiHomeUpdate(const SensorData &data, const NetworkStatus &net) {
     if (!s_screen) return;
+ 
+    // Mise à jour de l'identité du mineur au cas où elle a été modifiée en NVS
+    lv_label_set_text(s_lblWorker, g_config.workerName);
+    lv_label_set_text(s_lblZone, g_config.workerZone);
 
     // Batterie
     char batStr[16];

@@ -50,3 +50,24 @@ void wifiTask(void *param);
  * @brief Lance la tâche FreeRTOS WiFi.
  */
 void startWifiTask();
+
+/**
+ * @brief Démarre le point d'accès AP avec portail captif.
+ */
+void wifiStartAP();
+
+/**
+ * @brief Arrête le point d'accès AP.
+ */
+void wifiStopAP();
+
+/**
+ * @brief Retourne l'adresse IP du point d'accès (AP).
+ */
+String wifiGetAPIP();
+
+/**
+ * @brief Gère les requêtes HTTP/DNS du portail captif (doit être appelé périodiquement).
+ */
+void wifiHandleWebServer();
+

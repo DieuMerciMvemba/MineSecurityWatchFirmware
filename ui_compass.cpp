@@ -81,19 +81,19 @@ lv_obj_t* uiCompassCreate(lv_obj_t *parent) {
     lv_obj_remove_style(s_arcCompass, nullptr, LV_PART_KNOB);
     lv_obj_clear_flag(s_arcCompass, LV_OBJ_FLAG_CLICKABLE);
 
-    // Heading au centre
-    s_lblHeading = lv_label_create(s_screen);
+    // Heading au centre (parent = s_arcCompass pour éviter d'être empilé en Flexbox)
+    s_lblHeading = lv_label_create(s_arcCompass);
     lv_label_set_text(s_lblHeading, "0°");
     lv_obj_set_style_text_color(s_lblHeading, lv_color_hex(0xFFFFFF), 0);
     lv_obj_set_style_text_font(s_lblHeading, &lv_font_montserrat_24, 0);
-    lv_obj_align_to(s_lblHeading, s_arcCompass, LV_ALIGN_CENTER, 0, -8);
+    lv_obj_align(s_lblHeading, LV_ALIGN_CENTER, 0, -10);
 
-    // Direction cardinale
-    s_lblDirection = lv_label_create(s_screen);
+    // Direction cardinale (parent = s_arcCompass)
+    s_lblDirection = lv_label_create(s_arcCompass);
     lv_label_set_text(s_lblDirection, "N");
     lv_obj_set_style_text_color(s_lblDirection, lv_color_hex(0xFF0000), 0);
     lv_obj_set_style_text_font(s_lblDirection, &lv_font_montserrat_18, 0);
-    lv_obj_align_to(s_lblDirection, s_arcCompass, LV_ALIGN_CENTER, 0, 12);
+    lv_obj_align(s_lblDirection, LV_ALIGN_CENTER, 0, 12);
 
     // Container pour Roll/Pitch
     lv_obj_t *imuContainer = lv_obj_create(s_screen);

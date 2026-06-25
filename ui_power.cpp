@@ -234,3 +234,17 @@ void uiPowerShutdown() {
     // Shutdown - utiliser power off au lieu de shutdown
     esp_deep_sleep_start();
 }
+
+void uiPowerUpdate(float battery, uint16_t voltage) {
+    if (!s_screen) return;
+    lv_label_set_text_fmt(s_lblBattery, "%.0f%%", battery);
+    lv_label_set_text_fmt(s_lblVoltage, "%u mV", voltage);
+    
+    if (battery < 20) {
+        lv_obj_set_style_text_color(s_lblBattery, lv_color_hex(0xCC0000), 0);
+    } else if (battery < 50) {
+        lv_obj_set_style_text_color(s_lblBattery, lv_color_hex(0xFF6B00), 0);
+    } else {
+        lv_obj_set_style_text_color(s_lblBattery, lv_color_hex(0x00CC44), 0);
+    }
+}

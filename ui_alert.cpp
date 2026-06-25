@@ -53,6 +53,10 @@ lv_obj_t* uiAlertCreate(lv_obj_t *parent) {
     lv_obj_set_flex_align(s_screenAlerts, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_all(s_screenAlerts, 8, 0);
     lv_obj_set_style_pad_gap(s_screenAlerts, 6, 0);
+    
+    // Restreindre le scroll au sens vertical pour permettre le swipe horizontal du parent tileview
+    lv_obj_set_scroll_dir(s_screenAlerts, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(s_screenAlerts, LV_SCROLLBAR_MODE_AUTO);
 
     // Header avec titre et compteur
     lv_obj_t *header = lv_obj_create(s_screenAlerts);
@@ -85,7 +89,8 @@ lv_obj_t* uiAlertCreate(lv_obj_t *parent) {
 
     // Liste des alertes (scrollable)
     s_list = lv_obj_create(s_screenAlerts);
-    lv_obj_set_size(s_list, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_width(s_list, LV_PCT(100));
+    lv_obj_set_flex_grow(s_list, 1); // Permet à la liste de prendre tout l'espace restant pour scroller correctement
     lv_obj_set_flex_flow(s_list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_all(s_list, 4, 0);
@@ -200,7 +205,7 @@ static void pulse_anim_cb(void *obj, int32_t val) {
 
 static void dismiss_event_cb(lv_event_t *e) {
     lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_CLICKED) {
+    if (code == LV_EVENT_CLICKED || code == LV_EVENT_PRESSED || code == LV_EVENT_SHORT_CLICKED) {
         uiEmergencyHide();
     }
 }

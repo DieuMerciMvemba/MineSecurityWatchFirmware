@@ -8,6 +8,7 @@ lv_obj_t* uiPowerCreate(lv_obj_t *parent = nullptr);
 
 // Afficher l'écran Power
 void uiPowerShow();
+void uiPowerUpdate(float battery, uint16_t voltage);
 
 // Masquer l'écran Power
 void uiPowerHide();
