@@ -17,6 +17,8 @@
 #include <freertos/task.h>
 #include <freertos/semphr.h>
 
+#define SerialGPS Serial1
+
 // ============================================================
 //  Variables internes
 // ============================================================
@@ -84,6 +86,115 @@ bool sensorInit() {
     // Configurer et activer l'accéléromètre BMA423
     instance.sensor.configAccelerometer();
     instance.sensor.enableAccelerometer();
+
+    // ---------------------------------------------------------------
+    //  Détection du protocole GPS + récupération NMEA si nécessaire
+    // ---------------------------------------------------------------
+    //
+    // CONTEXTE : un appel précédent à gps.init() a basculé le module UBlox
+    // en protocole binaire UBX à 38400 baud et SAUVEGARDÉ cette config dans
+    // la flash du module → il reboot toujours en UBX même après power-off.
+    //
+    // STRATÉGIE :
+    //  1. Tester les baudrates connus (38400 en premier)
+    //  2. Lire ~100 octets et chercher '$' (NMEA) ou 0xB5 0x62 (UBX sync)
+    //  3. Si UBX → envoyer UBX-CFG-PRT pour forcer le module en NMEA @ 9600 baud
+    //  4. Si NMEA → déjà bon, rien à faire
+    // ---------------------------------------------------------------
+
+    {
+        // Commande UBX-CFG-PRT : UART1, 9600 baud, sortie NMEA uniquement
+        // Payload 20 octets ; checksum calculé (CK_A=0xA1, CK_B=0x0E)
+        static const uint8_t ubxSwitchToNmea[] = {
+            0xB5, 0x62,             // Sync chars UBX
+            0x06, 0x00,             // Class CFG, ID PRT
+            0x14, 0x00,             // Length = 20 bytes
+            0x01,                   // portID = UART1
+            0x00,                   // reserved
+            0x00, 0x00,             // txReady = disabled
+            0xD0, 0x08, 0x00, 0x00, // mode = 8N1
+            0x80, 0x25, 0x00, 0x00, // baudRate = 9600
+            0x07, 0x00,             // inProtoMask  = UBX+NMEA+RTCM
+            0x02, 0x00,             // outProtoMask = NMEA seulement
+            0x00, 0x00,             // flags
+            0x00, 0x00,             // reserved
+            0xA1, 0x0E              // Checksum CK_A, CK_B
+        };
+
+        uint32_t bauds[] = {38400, 115200, 57600, 9600};
+        bool gpsNmea = false;
+
+        for (int bi = 0; bi < 4 && !gpsNmea; bi++) {
+            SerialGPS.updateBaudRate(bauds[bi]);
+            delay(80);
+            // Vider le buffer UART (résidus du baudrate précédent)
+            while (SerialGPS.available()) SerialGPS.read();
+            delay(150);
+
+            // Lire jusqu'à 100 octets en 600 ms pour identifier le protocole
+            uint8_t buf[100];
+            int n = 0;
+            uint32_t t0 = millis();
+            while (millis() - t0 < 600 && n < 100) {
+                if (SerialGPS.available()) buf[n++] = SerialGPS.read();
+            }
+
+            if (n == 0) {
+                Serial.printf("[GPS] Aucun octet reçu à %u baud\n", bauds[bi]);
+                continue;
+            }
+
+            // Recherche de signatures de protocole dans le buffer
+            bool hasNmea = false, hasUbx = false;
+            for (int j = 0; j < n; j++) {
+                if (buf[j] == '$') { hasNmea = true; break; }
+                if (j + 1 < n && buf[j] == 0xB5 && buf[j+1] == 0x62) { hasUbx = true; break; }
+            }
+
+            if (hasNmea) {
+                Serial.printf("[GPS] ✅ NMEA détecté à %u baud\n", bauds[bi]);
+                // Envoi de la configuration profil Piéton / Portatif (sensibilité accrue pour montre)
+                static const uint8_t ubxSetPedestrian[] = {
+                    0xB5, 0x62,                         // Sync
+                    0x06, 0x8A,                         // UBX-CFG-VALSET
+                    0x09, 0x00,                         // Length = 9 octets
+                    0x00,                               // Version
+                    0x07,                               // Layers = RAM + BBR + Flash
+                    0x00, 0x00,                         // Reserved
+                    0x21, 0x00, 0x11, 0x20,             // CFG-NAVSPG-DYNMODEL (0x20110021)
+                    0x03,                               // 3 = Pedestrian
+                    0xF5, 0x7C                          // Checksum CK_A, CK_B
+                };
+                SerialGPS.write(ubxSetPedestrian, sizeof(ubxSetPedestrian));
+                SerialGPS.flush();
+                Serial.println("[GPS] ✅ Profil dynamique configuré : Piéton/Montre (sensibilité accrue)");
+                gpsNmea = true;
+
+            } else if (hasUbx) {
+                Serial.printf("[GPS] ⚠️ UBX binaire détecté à %u baud → envoi commande NMEA...\n", bauds[bi]);
+                // Envoyer la commande de basculement NMEA @ 9600
+                SerialGPS.write(ubxSwitchToNmea, sizeof(ubxSwitchToNmea));
+                SerialGPS.flush();
+                delay(300); // Attendre que le module se reconfigure
+
+                // Passer Serial1 à 9600 baud (nouveau baudrate du module)
+                SerialGPS.updateBaudRate(9600);
+                delay(100);
+                // Vider les octets résiduels
+                while (SerialGPS.available()) SerialGPS.read();
+                Serial.println("[GPS] ✅ Module GPS basculé en NMEA @ 9600 baud");
+                gpsNmea = true;
+
+            } else {
+                Serial.printf("[GPS] %d octets reçus à %u baud mais protocole inconnu (ni NMEA ni UBX)\n",
+                              n, bauds[bi]);
+            }
+        }
+
+        if (!gpsNmea) {
+            Serial.println("[GPS] ⚠️ Module GPS non détecté — vérifier câblage");
+        }
+    }
 #endif
 
     Serial.println("[SENSOR] Service capteurs initialisé");
@@ -148,15 +259,73 @@ void sensorRead(SensorData &out) {
     temp = instance.sensor.getTemperature(SensorBMA423::TEMP_DEG);
 #endif
 
-    // --- GPS (optionnel) ---
+    // --- GPS Matériel ---
     double lat = 0.0, lon = 0.0;
+    float alt = 0.0f, spd = 0.0f, hdop = 0.0f;
+    uint8_t sats = 0;
     bool gpsValid = false;
+
 #ifdef LILYGO_WATCH_S3_PLUS
+    // Récupération des métriques satellites (disponibles même avant le fix 3D complet)
+    if (instance.gps.satellites.isValid()) {
+        sats = (uint8_t)instance.gps.satellites.value();
+    }
+    if (instance.gps.speed.isValid()) {
+        spd = (float)instance.gps.speed.kmph();
+    }
+    if (instance.gps.altitude.isValid()) {
+        alt = (float)instance.gps.altitude.meters();
+    }
+    if (instance.gps.hdop.isValid()) {
+        hdop = (float)instance.gps.hdop.hdop();
+    }
+
     if (instance.gps.location.isValid()) {
         lat = instance.gps.location.lat();
         lon = instance.gps.location.lng();
         gpsValid = true;
+        Serial.printf("[GPS] ✅ Fix OK : Lat=%.6f, Lon=%.6f | Sats=%u | Alt=%.1fm | HDOP=%.1f\n",
+                      lat, lon, sats, alt, hdop);
+    } else {
+        // Log throttlé : 1 fois toutes les 30s pour ne pas saturer la console
+        static uint32_t s_lastNoFixLog = 0;
+        uint32_t nowMs = millis();
+        if (nowMs - s_lastNoFixLog >= 30000) {
+            s_lastNoFixLog = nowMs;
+            if (sats > 0) {
+                Serial.printf("[GPS] 🛰️ %u satellite(s) en vue (HDOP: %.1f) — synchronisation en cours (min. 4 requis pour position)...\n",
+                              sats, hdop);
+            } else {
+                Serial.println("[GPS] ⚠️ Recherche de signaux satellites... (Placez la montre près d'une fenêtre ou à ciel ouvert pour le fix)");
+            }
+        }
     }
+
+    // Synchronisation automatique de l'horloge système dès que l'heure satellite est reçue
+    if (instance.gps.date.isValid() && instance.gps.date.year() > 2020 && instance.gps.time.isValid() && instance.gps.time.age() < 2000) {
+        static bool s_gpsTimeSynced = false;
+        if (!s_gpsTimeSynced) {
+            s_gpsTimeSynced = true;
+            struct tm utc_tm = {0};
+            utc_tm.tm_year = instance.gps.date.year() - 1900;
+            utc_tm.tm_mon  = instance.gps.date.month() - 1;
+            utc_tm.tm_mday = instance.gps.date.day();
+            utc_tm.tm_hour = instance.gps.time.hour();
+            utc_tm.tm_min  = instance.gps.time.minute();
+            utc_tm.tm_sec  = instance.gps.time.second();
+            time_t t = mktime(&utc_tm);
+            struct timeval tv = { .tv_sec = t, .tv_usec = 0 };
+            settimeofday(&tv, nullptr);
+            // Synchronisation du RTC matériel
+            instance.rtc.hwClockWrite();
+            Serial.printf("[GPS] ✅ Horloge système & RTC synchronisés par satellite : %02d:%02d:%02d UTC\n",
+                          utc_tm.tm_hour, utc_tm.tm_min, utc_tm.tm_sec);
+        }
+    }
+#else
+    // Valeurs simulées en dev
+    sats = 6;
+    spd = (motion == MOTION_WALKING) ? 4.5f : (motion == MOTION_RUNNING ? 9.2f : 0.0f);
 #endif
 
     // --- Mise à jour de la structure ---
@@ -172,6 +341,10 @@ void sensorRead(SensorData &out) {
     out.gyroZ       = gz;
     out.latitude    = lat;
     out.longitude   = lon;
+    out.altitude    = alt;
+    out.speed       = spd;
+    out.satellites  = sats;
+    out.hdop        = hdop;
     out.gpsValid    = gpsValid;
     out.timestamp   = millis();
 
@@ -214,11 +387,50 @@ const char* sensorMotionStr(MotionType m) {
 // ============================================================
 void sensorTask(void *param) {
     SensorData data;
-    Serial.println("[SENSOR] Tâche démarrée");
+    Serial.println("[SENSOR] Tâche démarrée (Capteurs + GPS streaming)");
+    uint32_t lastSensorTime = 0;
+    uint32_t lastGpsDiag    = 0;
 
     for (;;) {
-        sensorRead(data);
-        vTaskDelay(pdMS_TO_TICKS(CFG_SENSOR_INTERVAL));
+#ifdef LILYGO_WATCH_S3_PLUS
+        // Alimentation agressive du parseur NMEA (pattern "smartDelay" de GPSFullExample).
+        // Le module GPS envoie des trames à ~1Hz (NMEA GGA, RMC, etc.).
+        // Chaque trame fait ~80 octets → le buffer UART (128 o) peut saturer en 1.6s
+        // si on ne vide pas assez vite. On vide à chaque itération de 5ms.
+        while (SerialGPS.available()) {
+            instance.gps.encode(SerialGPS.read());
+        }
+
+        // Log diagnostique toutes les 10s : affiche l'état réel du décodage NMEA
+        uint32_t now = millis();
+        if (now - lastGpsDiag >= 10000) {
+            lastGpsDiag = now;
+            uint32_t chars   = instance.gps.charsProcessed();
+            uint32_t passed  = instance.gps.passedChecksum();
+            uint32_t fails   = instance.gps.failedChecksum();
+            uint32_t sats    = instance.gps.satellites.isValid() ? instance.gps.satellites.value() : 0;
+            bool     fix     = instance.gps.location.isValid();
+            float    hdopVal = instance.gps.hdop.isValid() ? (float)instance.gps.hdop.hdop() : 99.9f;
+
+            Serial.printf("[GPS] Octets RX: %u | Phrases NMEA: %u | Sats: %u | HDOP: %.1f | Fix: %s | Err: %u\n",
+                          chars, passed, sats, hdopVal, fix ? "✅ OUI" : "⏳ RECHERCHE", fails);
+
+            if (chars < 10) {
+                Serial.println("[GPS] ⚠️ AUCUN octet reçu depuis Serial1 → vérifier câblage RX du GPS");
+            }
+        }
+#else
+        uint32_t now = millis();
+#endif
+
+        if (now - lastSensorTime >= CFG_SENSOR_INTERVAL) {
+            lastSensorTime = now;
+            sensorRead(data);
+        }
+
+        // 5ms : suffisant pour laisser la main aux autres tâches FreeRTOS
+        // tout en vidant le buffer UART GPS avant tout risque d'overflow
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
 

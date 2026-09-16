@@ -9,6 +9,7 @@ static lv_obj_t *s_lblLat = nullptr;
 static lv_obj_t *s_lblLng = nullptr;
 static lv_obj_t *s_lblSpeed = nullptr;
 static lv_obj_t *s_lblSatellites = nullptr;
+static lv_obj_t *s_lblHdop = nullptr;
 static lv_obj_t *s_lblDatetime = nullptr;
 static lv_obj_t *s_lblStatus = nullptr;
 
@@ -165,6 +166,26 @@ lv_obj_t* uiGpsCreate(lv_obj_t *parent) {
     lv_obj_set_style_text_color(s_lblSatellites, lv_color_hex(0xFF6B00), 0);
     lv_obj_set_style_text_font(s_lblSatellites, &lv_font_montserrat_14, 0);
 
+    // Précision HDOP
+    lv_obj_t *hdopRow = lv_obj_create(dataContainer);
+    lv_obj_set_size(hdopRow, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(hdopRow, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(hdopRow, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_all(hdopRow, 0, 0);
+    lv_obj_set_style_pad_gap(hdopRow, 8, 0);
+    lv_obj_set_style_border_width(hdopRow, 0, 0);
+    lv_obj_set_style_bg_opa(hdopRow, LV_OPA_TRANSP, 0);
+
+    lv_obj_t *hdopLabel = lv_label_create(hdopRow);
+    lv_label_set_text(hdopLabel, "PRÉCISION (HDOP):");
+    lv_obj_set_style_text_color(hdopLabel, lv_color_hex(0xAAAAAA), 0);
+    lv_obj_set_style_text_font(hdopLabel, &lv_font_montserrat_12, 0);
+
+    s_lblHdop = lv_label_create(hdopRow);
+    lv_label_set_text(s_lblHdop, "--");
+    lv_obj_set_style_text_color(s_lblHdop, lv_color_hex(0x0099FF), 0);
+    lv_obj_set_style_text_font(s_lblHdop, &lv_font_montserrat_14, 0);
+
     // Date/Heure GPS
     s_lblDatetime = lv_label_create(dataContainer);
     lv_label_set_text(s_lblDatetime, "--/--/-- --:--:--");
@@ -177,7 +198,7 @@ lv_obj_t* uiGpsCreate(lv_obj_t *parent) {
     return s_screen;
 }
 
-void uiGpsUpdate(double lat, double lng, float speed, uint8_t satellites) {
+void uiGpsUpdate(double lat, double lng, float speed, uint8_t satellites, float hdop, bool fixValid) {
     if (!s_screen) return;
 
     lv_label_set_text_fmt(s_lblLat, "%.6f", lat);
@@ -185,11 +206,24 @@ void uiGpsUpdate(double lat, double lng, float speed, uint8_t satellites) {
     lv_label_set_text_fmt(s_lblSpeed, "%.1f km/h", speed);
     lv_label_set_text_fmt(s_lblSatellites, "%u", satellites);
 
-    if (satellites >= 4) {
-        lv_label_set_text(s_lblStatus, "GPS Fix OK");
+    if (s_lblHdop) {
+        if (hdop < 50.0f) {
+            lv_label_set_text_fmt(s_lblHdop, "%.1f", hdop);
+            lv_obj_set_style_text_color(s_lblHdop, (hdop <= 3.0f) ? lv_color_hex(0x00CC44) : lv_color_hex(0xFF6B00), 0);
+        } else {
+            lv_label_set_text(s_lblHdop, "--");
+            lv_obj_set_style_text_color(s_lblHdop, lv_color_hex(0x888888), 0);
+        }
+    }
+
+    if (fixValid || satellites >= 4) {
+        lv_label_set_text(s_lblStatus, "Fix 3D Verrouillé");
         lv_obj_set_style_text_color(s_lblStatus, lv_color_hex(0x00CC44), 0);
+    } else if (satellites == 3) {
+        lv_label_set_text(s_lblStatus, "Acquisition: 3/4 sats");
+        lv_obj_set_style_text_color(s_lblStatus, lv_color_hex(0xFF6B00), 0);
     } else if (satellites > 0) {
-        lv_label_set_text(s_lblStatus, "Acquisition...");
+        lv_label_set_text_fmt(s_lblStatus, "Acquisition: %u/4 sats", satellites);
         lv_obj_set_style_text_color(s_lblStatus, lv_color_hex(0xFF6B00), 0);
     } else {
         lv_label_set_text(s_lblStatus, "Recherche satellites...");

@@ -64,6 +64,7 @@ void configResetDefaults() {
     strncpy(g_config.workerZone, CFG_WORKER_ZONE, sizeof(g_config.workerZone) - 1);
     strncpy(g_config.siteName, CFG_SITE_NAME, sizeof(g_config.siteName) - 1);
     g_config.apEnabled = false; // Désactivé par défaut
+    g_config.timezoneOffset = 2; // UTC+2 (Lubumbashi / Katanga, République Démocratique du Congo)
     
     configSave();
 }

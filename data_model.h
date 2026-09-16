@@ -87,6 +87,10 @@ struct SensorData {
     float   gyroZ;          // gyro Z (°/s)
     double  latitude;       // GPS lat (0.0 si indisponible)
     double  longitude;      // GPS lon (0.0 si indisponible)
+    float   altitude;       // GPS altitude en mètres (0.0 si indisponible)
+    float   speed;          // Vitesse en km/h
+    uint8_t satellites;     // Nombre de satellites visibles / fix
+    float   hdop;           // Précision horizontale HDOP
     bool    gpsValid;       // GPS fix valide
     uint32_t timestamp;     // millis() au moment de la lecture
 };

@@ -7,7 +7,7 @@
 lv_obj_t* uiGpsCreate(lv_obj_t *parent = nullptr);
 
 // Mettre à jour les données GPS
-void uiGpsUpdate(double lat, double lng, float speed, uint8_t satellites);
+void uiGpsUpdate(double lat, double lng, float speed, uint8_t satellites, float hdop = 99.9f, bool fixValid = false);
 
 // Afficher l'écran GPS
 void uiGpsShow();

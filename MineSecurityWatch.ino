@@ -179,44 +179,76 @@ void registerSwipeHandlers() {
 }
 
 // ============================================================
-//  SOS – Bouton appui long
+//  Gestion Alimentation Écran & Rétroéclairage
+// ============================================================
+
+static bool s_screenOn = true;
+
+void setScreenPower(bool on) {
+    s_screenOn = on;
+    if (s_screenOn) {
+        instance.setBrightness(DEVICE_MAX_BRIGHTNESS_LEVEL);
+        Serial.println("[POWER] 💡 Écran ALLUMÉ (Pleine luminosité)");
+    } else {
+        instance.setBrightness(0);
+        Serial.println("[POWER] 🌙 Écran ÉTEINT (Économie batterie active, tâches en cours)");
+    }
+}
+
+void toggleScreenPower() {
+    setScreenPower(!s_screenOn);
+}
+
+bool isScreenOn() {
+    return s_screenOn;
+}
+
+// ============================================================
+//  SOS – Déclenchement d'urgence (Tactile & Boutons Physiques)
 // ============================================================
 
 /**
  * @brief Callback depuis ui_home.cpp quand le bouton SOS est pressé.
  */
 void onSOSPressed() {
-    Serial.println("[MAIN] 🆘 SOS déclenché !");
+    Serial.println("[MAIN] 🆘 SOS déclenché depuis l'écran tactile !");
     triggerSOS();
 }
 
 /**
  * @brief Déclenche la séquence SOS complète :
- *        vibration + écran rouge + API + LoRa + alerte locale.
+ *        rallumage écran + vibration + écran rouge + API + LoRa + alerte locale.
  */
 void triggerSOS() {
-    // Vibration
+    // Rallumer immédiatement l'écran si éteint pour afficher l'alerte visuelle
+    setScreenPower(true);
+
+    // Vibration haptique
 #ifdef LILYGO_WATCH_S3_PLUS
     instance.vibrator();
 #endif
 
-    // Écran rouge SOS
+    // Écran rouge SOS (thread-safe)
+    bool isUiTask = (xTaskGetCurrentTaskHandle() == g_uiTaskHandle);
+    if (!isUiTask) xSemaphoreTake(g_lvglMutex, pdMS_TO_TICKS(100));
     uiEmergencyShowSOS();
+    if (!isUiTask) xSemaphoreGive(g_lvglMutex);
+
     uiNavigateTo(SCREEN_SOS);
 
-    // Données capteurs actuelles
+    // Données capteurs actuelles (avec vraies coordonnées GPS)
     SensorData data = sensorGetLatest();
 
-    // Envoi API (dans la même tâche/appel direct car priorité critique)
+    // Envoi prioritaire API REST
     apiSendSOS(data);
 
-    // Envoi LoRa
+    // Émission radio LoRa d'urgence
     loraSendSOS(data);
 
-    // Alerte locale
+    // Alerte locale enregistrée
     addAlert(ALERT_SOS, "SOS envoyé ! En attente de secours.", false);
 
-    Serial.println("[MAIN] SOS : API + LoRa + Alerte envoyés");
+    Serial.println("[MAIN] 🆘 SOS DÉCLENCHÉ : API + LoRa + Vibreur + Alerte activés !");
 }
 
 // ============================================================
@@ -229,13 +261,20 @@ void triggerSOS() {
 void triggerFall() {
     Serial.println("[MAIN] ⚠️  CHUTE : Déclenchement alerte");
 
+    // Rallumer l'écran si éteint
+    setScreenPower(true);
+
     // Vibration prolongée
 #ifdef LILYGO_WATCH_S3_PLUS
     instance.vibrator();
 #endif
 
     // Écran rouge CHUTE
+    bool isUiTask = (xTaskGetCurrentTaskHandle() == g_uiTaskHandle);
+    if (!isUiTask) xSemaphoreTake(g_lvglMutex, pdMS_TO_TICKS(100));
     uiEmergencyShowFall();
+    if (!isUiTask) xSemaphoreGive(g_lvglMutex);
+
     uiNavigateTo(SCREEN_SOS);
 
     // Données capteurs
@@ -407,7 +446,7 @@ static void uiTask(void *param) {
                         uiNetworkUpdate(net);
                         break;
                     case SCREEN_GPS:
-                        uiGpsUpdate(data.latitude, data.longitude, 0.0f, data.gpsValid ? 4 : 0);
+                        uiGpsUpdate(data.latitude, data.longitude, data.speed, data.satellites, data.hdop, data.gpsValid);
                         break;
                     case SCREEN_COMPASS:
                         {
@@ -504,25 +543,62 @@ void setup() {
     instance.begin();
     Serial.println("[INIT] ✅ LilyGoLib OK");
 
+    // Configurer le fuseau horaire local pour toute l'application via configTzTime
+    // (méthode officielle selon RTC_TimeSynchronization.ino)
+    // Format POSIX : "UTC-2" = UTC+2 (le signe est inversé en POSIX)
+    {
+        char tzStr[16];
+        int8_t tz = g_config.timezoneOffset;
+        snprintf(tzStr, sizeof(tzStr), "UTC%s%d", (tz > 0 ? "-" : "+"), abs((int)tz));
+        setenv("TZ", tzStr, 1);
+        tzset();
+        Serial.printf("[INIT] Fuseau horaire configuré : UTC%+d (%s)\n", (int)tz, tzStr);
+    }
+
     // Initialiser le temps système ESP32 depuis la puce RTC matérielle
+    // API officielle (RTC_TimeLib.ino) : instance.rtc.getDateTime(&struct_tm)
 #ifdef LILYGO_WATCH_S3_PLUS
     if (instance.rtc.isClockIntegrityGuaranteed()) {
-        RTC_DateTime dt = instance.rtc.getDateTime();
-        struct tm timeinfo = dt.toUnixTime();
-        time_t t = mktime(&timeinfo);
+        struct tm local_tm;
+        instance.rtc.getDateTime(&local_tm);
+        // La RTC stocke l'heure locale → mktime() l'interprète dans le fuseau TZ configuré ci-dessus
+        time_t t = mktime(&local_tm);
         struct timeval tv = { .tv_sec = t, .tv_usec = 0 };
         settimeofday(&tv, nullptr);
-        
+
         char timeBuf[64];
-        strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", &timeinfo);
-        Serial.printf("[INIT] RTC matérielle lue : %s\n", timeBuf);
+        strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", &local_tm);
+        Serial.printf("[INIT] RTC matérielle lue : %s (UTC%+d)\n", timeBuf, (int)g_config.timezoneOffset);
     } else {
         Serial.println("[INIT] ⚠ RTC non initialisée ou oscillateur arrêté");
     }
 #endif
 
-    // Luminosité maximale
+    // Luminosité maximale initiale
     instance.setBrightness(DEVICE_MAX_BRIGHTNESS_LEVEL);
+    s_screenOn = true;
+
+    // --------------------------------------------------------
+    //  Configuration des boutons physiques (BOOT & Power Key)
+    // --------------------------------------------------------
+    // Bouton BOOT physique (GPIO 0) avec résistance de rappel au niveau haut
+    pinMode(0, INPUT_PULLUP);
+
+    // Enregistrement des événements matériels de gestion d'énergie (Bouton Power)
+    instance.onEvent([](DeviceEvent_t event, void *params, void *user_data) {
+        if (event == POWER_EVENT) {
+            uint32_t pmuEvent = instance.getPMUEventType(params);
+            if (pmuEvent == PMU_EVENT_KEY_CLICKED) {
+                // Clic court sur Power Button : Allumer ou éteindre l'écran
+                toggleScreenPower();
+            } else if (pmuEvent == PMU_EVENT_KEY_LONG_PRESSED) {
+                // Appui long sur Power Button (>= 2s) : Alerte SOS d'urgence
+                Serial.println("[BUTTON] 🆘 Appui long Power Key (PMU) -> SOS déclenché !");
+                triggerSOS();
+            }
+        }
+    }, POWER_EVENT, NULL);
+    Serial.println("[INIT] ✅ Boutons physiques configurés (Power Key + BOOT GPIO 0)");
 
     // --------------------------------------------------------
     //  LVGL
@@ -683,22 +759,45 @@ void setup() {
 }
 
 // ============================================================
-//  LOOP – Minimal (LVGL géré par UITask)
+//  LOOP – Gestion des événements matériels et boutons physiques
 // ============================================================
 
 void loop() {
-    // La boucle principale est intentionnellement vide.
-    // Tout le traitement se fait dans les tâches FreeRTOS.
-    // On surveille uniquement les alertes critiques hardware.
+    // 1. Traitement des événements matériels de la bibliothèque LilyGoLib (PMU, interruptions)
+    instance.loop();
 
-    // Vérification connexion WiFi perdue (notification UI)
-    static bool s_prevWifi = false;
-    bool curWifi = isWifiConnected();
-    if (s_prevWifi && !curWifi) {
-        addAlert(ALERT_NETWORK_LOST, "Connexion WiFi perdue !", false);
+    // 2. Surveillance du bouton BOOT physique (GPIO 0)
+    //    Un maintien continu de 2 secondes (2000 ms) déclenche immédiatement le SOS d'urgence
+    static uint32_t s_bootPressStart = 0;
+    static bool s_bootTriggered = false;
+
+    if (digitalRead(0) == LOW) {
+        if (s_bootPressStart == 0) {
+            s_bootPressStart = millis();
+            s_bootTriggered = false;
+        } else if (!s_bootTriggered && (millis() - s_bootPressStart >= 2000)) {
+            s_bootTriggered = true;
+            Serial.println("[BUTTON] 🆘 Bouton BOOT (GPIO 0) maintenu 2s -> SOS déclenché !");
+            triggerSOS();
+        }
+    } else {
+        s_bootPressStart = 0;
+        s_bootTriggered = false;
     }
-    s_prevWifi = curWifi;
 
-    // Suspendre la tâche loop (pas nécessaire de tourner rapidement)
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    // 3. Vérification de la connexion WiFi (notification UI toutes les secondes)
+    static uint32_t s_lastWifiCheck = 0;
+    static bool s_prevWifi = false;
+    uint32_t now = millis();
+    if (now - s_lastWifiCheck >= 1000) {
+        s_lastWifiCheck = now;
+        bool curWifi = isWifiConnected();
+        if (s_prevWifi && !curWifi) {
+            addAlert(ALERT_NETWORK_LOST, "Connexion WiFi perdue !", false);
+        }
+        s_prevWifi = curWifi;
+    }
+
+    // Pause courte de 20ms pour laisser la main aux autres tâches FreeRTOS
+    vTaskDelay(pdMS_TO_TICKS(20));
 }

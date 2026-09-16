@@ -11,6 +11,8 @@
 #include "wifi_service.h"
 #include "ui_images.h"
 #include <WiFi.h>
+#include <LilyGoLib.h>
+#include <sys/time.h>
 
 
 // En-tête externe de navigation
@@ -470,7 +472,9 @@ lv_obj_t* uiSettingsCreate(lv_obj_t *parent) {
     // Mettre à jour les labels dynamiques et visibilités
     uiSettingsUpdate(g_config.apEnabled, wifiGetAPIP().c_str(), wifiGetIP().c_str());
 
-    // Row Boutons actions
+    // --------------------------------------------------------
+    //  Row Boutons actions
+    // --------------------------------------------------------
     lv_obj_t *rowActions = lv_obj_create(s_settingsContainer);
     lv_obj_set_size(rowActions, LV_PCT(94), 40);
     lv_obj_set_style_bg_opa(rowActions, LV_OPA_TRANSP, 0);
@@ -481,9 +485,152 @@ lv_obj_t* uiSettingsCreate(lv_obj_t *parent) {
     lv_obj_set_flex_align(rowActions, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_clear_flag(rowActions, LV_OBJ_FLAG_SCROLLABLE);
 
+    // Bouton Régler l'heure
+    lv_obj_t *btnSetTime = lv_button_create(rowActions);
+    lv_obj_set_size(btnSetTime, LV_PCT(30), 34);
+    lv_obj_set_style_bg_color(btnSetTime, lv_color_hex(0x003366), 0);
+    lv_obj_set_style_bg_opa(btnSetTime, LV_OPA_80, 0);
+    lv_obj_set_style_radius(btnSetTime, 8, 0);
+    lv_obj_set_style_border_width(btnSetTime, 1, 0);
+    lv_obj_set_style_border_color(btnSetTime, lv_color_hex(0x4499FF), 0);
+    lv_obj_set_style_border_opa(btnSetTime, LV_OPA_60, 0);
+    lv_obj_add_event_cb(btnSetTime, [](lv_event_t *e) {
+        if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+
+        // Créer la popup plein écran
+        lv_obj_t *popup = lv_obj_create(s_screen);
+        lv_obj_set_size(popup, LV_PCT(100), LV_PCT(100));
+        lv_obj_set_pos(popup, 0, 0);
+        lv_obj_set_style_bg_color(popup, lv_color_hex(0x0A0A0A), 0);
+        lv_obj_set_style_bg_opa(popup, LV_OPA_90, 0);
+        lv_obj_set_style_border_width(popup, 0, 0);
+        lv_obj_set_style_pad_all(popup, 12, 0);
+        lv_obj_clear_flag(popup, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *lblT = lv_label_create(popup);
+        lv_label_set_text(lblT, "[::] REGLER L'HEURE");
+        lv_obj_align(lblT, LV_ALIGN_TOP_MID, 0, 10);
+        lv_obj_set_style_text_color(lblT, lv_color_hex(0x4499FF), 0);
+        lv_obj_set_style_text_font(lblT, &lv_font_montserrat_14, 0);
+
+        lv_obj_t *lblHint = lv_label_create(popup);
+        lv_label_set_text_fmt(lblHint, "Format HH:MM:SS  (UTC%+d)", (int)g_config.timezoneOffset);
+        lv_obj_align(lblHint, LV_ALIGN_TOP_MID, 0, 36);
+        lv_obj_set_style_text_color(lblHint, lv_color_hex(0x888888), 0);
+        lv_obj_set_style_text_font(lblHint, &lv_font_montserrat_10, 0);
+
+        // TextArea pré-rempli avec l'heure actuelle
+        lv_obj_t *ta = lv_textarea_create(popup);
+        lv_obj_set_size(ta, LV_PCT(88), 45);
+        lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, 58);
+        lv_textarea_set_one_line(ta, true);
+        lv_textarea_set_max_length(ta, 8);
+        lv_textarea_set_placeholder_text(ta, "HH:MM:SS");
+        lv_obj_set_style_bg_color(ta, lv_color_hex(0x1A1A2E), 0);
+        lv_obj_set_style_border_color(ta, lv_color_hex(0x4499FF), 0);
+        lv_obj_set_style_text_color(ta, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_set_style_text_font(ta, &lv_font_montserrat_20, 0);
+        // Pré-remplir avec l'heure système actuelle
+        time_t now = time(nullptr);
+        struct tm *cur = localtime(&now);
+        char curTimeBuf[12];
+        snprintf(curTimeBuf, sizeof(curTimeBuf), "%02d:%02d:%02d", cur->tm_hour, cur->tm_min, cur->tm_sec);
+        lv_textarea_set_text(ta, curTimeBuf);
+
+        // Clavier numérique
+        lv_obj_t *kb = lv_keyboard_create(popup);
+        lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_NUMBER);
+        lv_obj_set_size(kb, LV_PCT(100), LV_PCT(45));
+        lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+        lv_keyboard_set_textarea(kb, ta);
+
+        // Bouton Valider
+        lv_obj_t *btnOK = lv_button_create(popup);
+        lv_obj_set_size(btnOK, 100, 32);
+        lv_obj_align(btnOK, LV_ALIGN_TOP_RIGHT, -8, 108);
+        lv_obj_set_style_bg_color(btnOK, lv_color_hex(0x00AA44), 0);
+        lv_obj_set_style_radius(btnOK, 8, 0);
+        lv_obj_t *lblOK = lv_label_create(btnOK);
+        lv_label_set_text(lblOK, LV_SYMBOL_OK " Valider");
+        lv_obj_center(lblOK);
+        lv_obj_set_style_text_font(lblOK, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(lblOK, lv_color_hex(0xFFFFFF), 0);
+
+        // Capturer le popup et le ta dans le callback via user_data struct
+        struct TimeEditCtx {
+            lv_obj_t *popup;
+            lv_obj_t *ta;
+        };
+        static TimeEditCtx ctx; // static OK : un seul dialog à la fois
+        ctx.popup = popup;
+        ctx.ta = ta;
+
+        lv_obj_add_event_cb(btnOK, [](lv_event_t *ev) {
+            if (lv_event_get_code(ev) != LV_EVENT_CLICKED) return;
+            TimeEditCtx *c = (TimeEditCtx*)lv_event_get_user_data(ev);
+            const char *txt = lv_textarea_get_text(c->ta);
+
+            int hh = 0, mm = 0, ss = 0;
+            if (sscanf(txt, "%d:%d:%d", &hh, &mm, &ss) == 3
+                && hh >= 0 && hh < 24 && mm >= 0 && mm < 60 && ss >= 0 && ss < 60) {
+
+                // Construire la struct tm avec la date d'aujourd'hui
+                time_t nowT = time(nullptr);
+                struct tm *curT = localtime(&nowT);
+                curT->tm_hour = hh;
+                curT->tm_min  = mm;
+                curT->tm_sec  = ss;
+                curT->tm_isdst = 0;
+                time_t newT = mktime(curT);
+
+                // Appliquer au système (ESP32 clock)
+                struct timeval tv = { .tv_sec = newT, .tv_usec = 0 };
+                settimeofday(&tv, nullptr);
+
+#ifdef LILYGO_WATCH_S3_PLUS
+                // Écrire l'heure système dans la puce RTC matérielle.
+                // API officielle (RTC_TimeSynchronization.ino) : hwClockWrite()
+                // copie le clock système ESP32 → RTC hardware, sans manipuler RTC_DateTime.
+                instance.rtc.hwClockWrite();
+                Serial.printf("[RTC] ✅ Heure mise à jour : %02d:%02d:%02d\n", hh, mm, ss);
+#endif
+                // Fermer popup
+                lv_obj_delete(c->popup);
+                c->popup = nullptr;
+            } else {
+                // Mauvais format — colorer rouge temporairement
+                lv_obj_set_style_border_color(c->ta, lv_color_hex(0xFF0000), 0);
+                Serial.println("[RTC] ⚠️ Format invalide (HH:MM:SS attendu)");
+            }
+        }, LV_EVENT_CLICKED, &ctx);
+
+        // Bouton Annuler
+        lv_obj_t *btnCancel = lv_button_create(popup);
+        lv_obj_set_size(btnCancel, 90, 32);
+        lv_obj_align(btnCancel, LV_ALIGN_TOP_LEFT, 8, 108);
+        lv_obj_set_style_bg_color(btnCancel, lv_color_hex(0x444444), 0);
+        lv_obj_set_style_radius(btnCancel, 8, 0);
+        lv_obj_t *lblCancel = lv_label_create(btnCancel);
+        lv_label_set_text(lblCancel, LV_SYMBOL_CLOSE " Annuler");
+        lv_obj_center(lblCancel);
+        lv_obj_set_style_text_font(lblCancel, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(lblCancel, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_add_event_cb(btnCancel, [](lv_event_t *ev) {
+            if (lv_event_get_code(ev) != LV_EVENT_CLICKED) return;
+            TimeEditCtx *c = (TimeEditCtx*)lv_event_get_user_data(ev);
+            if (c->popup) { lv_obj_delete(c->popup); c->popup = nullptr; }
+        }, LV_EVENT_CLICKED, &ctx);
+
+    }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t *lblSetTime = lv_label_create(btnSetTime);
+    lv_label_set_text(lblSetTime, "Heure");
+    lv_obj_center(lblSetTime);
+    lv_obj_set_style_text_font(lblSetTime, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(lblSetTime, lv_color_hex(0xFFFFFF), 0);
+
     // Bouton Redémarrer (frosted glass)
     lv_obj_t *btnReboot = lv_button_create(rowActions);
-    lv_obj_set_size(btnReboot, LV_PCT(46), 34);
+    lv_obj_set_size(btnReboot, LV_PCT(30), 34);
     lv_obj_set_style_bg_color(btnReboot, lv_color_hex(0x553311), 0);
     lv_obj_set_style_bg_opa(btnReboot, LV_OPA_70, 0);
     lv_obj_set_style_radius(btnReboot, 8, 0);
@@ -499,7 +646,7 @@ lv_obj_t* uiSettingsCreate(lv_obj_t *parent) {
 
     // Bouton Retour (frosted glass)
     lv_obj_t *btnBack = lv_button_create(rowActions);
-    lv_obj_set_size(btnBack, LV_PCT(46), 34);
+    lv_obj_set_size(btnBack, LV_PCT(30), 34);
     lv_obj_set_style_bg_color(btnBack, lv_color_hex(0x222222), 0);
     lv_obj_set_style_bg_opa(btnBack, LV_OPA_70, 0);
     lv_obj_set_style_radius(btnBack, 8, 0);

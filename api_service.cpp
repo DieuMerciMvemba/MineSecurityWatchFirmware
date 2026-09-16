@@ -125,6 +125,9 @@ bool apiSendData(const SensorData &data) {
         ts
     );
 
+    Serial.printf("[API] Envoi données: Lat=%.6f, Lon=%.6f, Batt=%.1f%%, Temp=%.1f°C, Steps=%ld\n",
+                 data.latitude, data.longitude, data.battery, data.temperature, data.steps);
+
     return httpPost(g_config.apiEndpoint, String(payload));
 }
 
@@ -149,7 +152,8 @@ bool apiSendSOS(const SensorData &data) {
         ts
     );
 
-    Serial.println("[API] 🆘 Envoi SOS au serveur");
+    Serial.printf("[API] 🆘 Envoi SOS au serveur: Lat=%.6f, Lon=%.6f, Batt=%.1f%%\n",
+                 data.latitude, data.longitude, data.battery);
     return httpPost(g_config.apiSosEndpoint, String(payload));
 }
 
@@ -174,7 +178,8 @@ bool apiSendFallAlert(const SensorData &data) {
         ts
     );
 
-    Serial.println("[API] ⚠️  Envoi alerte CHUTE au serveur");
+    Serial.printf("[API] ⚠️  Envoi alerte CHUTE au serveur: Lat=%.6f, Lon=%.6f, Batt=%.1f%%\n",
+                 data.latitude, data.longitude, data.battery);
     return httpPost(g_config.apiSosEndpoint, String(payload));
 }
 

@@ -219,6 +219,11 @@ bool connectWifi() {
     s_wifiState = NET_CONNECTING;
     Serial.printf("[WIFI] Connexion à %s ...\n", g_config.wifiSsid);
 
+    // Évite l'erreur ESP-IDF "wifi:sta is connecting, cannot set config"
+    // en annulant proprement une tentative en suspens avant de réinitialiser
+    WiFi.disconnect(false);
+    delay(50);
+
     // Utilisation des credentials de la config active
     WiFi.begin(g_config.wifiSsid, g_config.wifiPassword);
 

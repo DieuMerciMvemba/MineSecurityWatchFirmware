@@ -20,6 +20,7 @@ struct SystemConfig {
     char workerZone[17];
     char siteName[33];
     bool apEnabled;
+    int8_t timezoneOffset;  // Décalage UTC en heures (ex: +1 Paris, +2 Kinshasa/Lubumbashi)
 };
 
 extern SystemConfig g_config;
