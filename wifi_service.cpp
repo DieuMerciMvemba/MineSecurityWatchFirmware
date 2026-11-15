@@ -10,6 +10,7 @@
 #include "config_storage.h"
 #include "sensor_service.h"
 #include "battery_service.h"
+#include "ble_beacon_service.h"
 #include <WiFi.h>
 #include <WebServer.h>
 #include <DNSServer.h>
@@ -319,6 +320,7 @@ void wifiTask(void *param) {
 
     for (;;) {
         wifiHandleWebServer();
+        bleScanPoll();
 
         uint32_t now = millis();
         if (now - lastCheck > 1000) { // Vérifier l'état toutes les secondes

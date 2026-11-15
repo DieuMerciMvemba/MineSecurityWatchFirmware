@@ -46,6 +46,7 @@
 #include "battery_service.h"
 #include "wifi_service.h"
 #include "api_service.h"
+#include "ble_beacon_service.h"
 #include "lora_service.h"
 #include "ui_home.h"
 #include "ui_health.h"
@@ -721,6 +722,7 @@ void setup() {
     sensorInit();
     loraInit();
     apiInit();
+    bleScanInit();
     
     // Initialisation SD Card pour logging
     if (sdLoggerInit()) {
@@ -745,6 +747,7 @@ void setup() {
     startSensorTask();
     startWifiTask();
     startApiTask();
+    startBleScanTask();
     startLoraTask();
     startAlertTask();
     startUITask();

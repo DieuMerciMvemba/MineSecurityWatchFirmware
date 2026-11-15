@@ -14,6 +14,7 @@
 #include "config_storage.h"
 #include "sensor_service.h"
 #include "wifi_service.h"
+#include "ble_beacon_service.h"
 #include <LilyGoLib.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -63,6 +64,13 @@ static bool httpPost(const char *endpoint, const String &payload) {
         return false;
     }
 
+    // Attendre la fin d'un éventuel scan passif court (~50-70ms) avant d'ouvrir le socket HTTP
+    uint32_t waited = 0;
+    while (WiFi.scanComplete() == WIFI_SCAN_RUNNING && waited < 150) {
+        vTaskDelay(pdMS_TO_TICKS(15));
+        waited += 15;
+    }
+
     HTTPClient http;
     char url[128];
     snprintf(url, sizeof(url), "http://%s:%d%s",
@@ -103,7 +111,10 @@ bool apiSendData(const SensorData &data) {
     char ts[32];
     getTimestamp(ts, sizeof(ts));
 
-    char payload[512];
+    char beaconsJson[256];
+    bleFormatBeaconsJson(beaconsJson, sizeof(beaconsJson), 5);
+
+    char payload[768];
     snprintf(payload, sizeof(payload),
         "{"
         "\"workerId\":\"%s\","
@@ -113,6 +124,8 @@ bool apiSendData(const SensorData &data) {
         "\"motion\":\"%s\","
         "\"lat\":%.6f,"
         "\"lng\":%.6f,"
+        "\"gpsValid\":%s,"
+        "\"beacons\":%s,"
         "\"timestamp\":\"%s\""
         "}",
         g_config.workerId,
@@ -122,11 +135,13 @@ bool apiSendData(const SensorData &data) {
         sensorMotionStr(data.motion),
         data.latitude,
         data.longitude,
+        data.gpsValid ? "true" : "false",
+        beaconsJson,
         ts
     );
 
-    Serial.printf("[API] Envoi données: Lat=%.6f, Lon=%.6f, Batt=%.1f%%, Temp=%.1f°C, Steps=%ld\n",
-                 data.latitude, data.longitude, data.battery, data.temperature, data.steps);
+    Serial.printf("[API] Envoi données: Lat=%.6f, Lon=%.6f, GPS=%s, Steps=%ld, Beacons=%s\n",
+                 data.latitude, data.longitude, data.gpsValid ? "OK" : "NO", data.steps, beaconsJson);
 
     return httpPost(g_config.apiEndpoint, String(payload));
 }
